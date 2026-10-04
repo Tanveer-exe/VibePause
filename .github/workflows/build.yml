@@ -27,6 +27,30 @@ jobs:
         run: |
           Remove-Item -Recurse -Force src -ErrorAction SilentlyContinue
           Expand-Archive -Path VibePause_src.zip -DestinationPath src -Force
+          $srcRoot = (Resolve-Path "src").Path
+          $spec = Get-ChildItem -Path $srcRoot -Recurse -Filter "VibePause.spec" -File | Select-Object -First 1
+          if (-not $spec) {
+            throw "VibePause.spec not found after extracting VibePause_src.zip."
+          }
+          $specDir = $spec.Directory.FullName
+          if ($specDir -ne $srcRoot) {
+            Write-Host "Using nested source root: $specDir"
+            Get-ChildItem -Path $specDir -Force | Move-Item -Destination $srcRoot -Force
+          }
+
+      - name: Ensure installer AppVersion metadata
+        shell: pwsh
+        run: |
+          $iss = "src\installer\VibePause.iss"
+          if (!(Test-Path $iss)) {
+            throw "Installer script not found at $iss."
+          }
+          $content = Get-Content -Path $iss -Raw
+          if ($content -notmatch '(?im)^\s*AppVersion\s*=') {
+            $content = $content -replace '(?m)^\[Setup\]\r?\n', "[Setup]`r`nAppVersion=1.0.0`r`n"
+            Set-Content -Path $iss -Value $content -Encoding UTF8
+            Write-Host "Injected fallback AppVersion=1.0.0 into installer/VibePause.iss."
+          }
 
       - name: Install Python dependencies
         shell: pwsh
