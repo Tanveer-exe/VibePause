@@ -29,6 +29,14 @@ jobs:
             Move-Item src\VibePause_src\* src\ -Force
             Remove-Item -Recurse -Force src\VibePause_src
           }
+          $installerScript = "src\installer\VibePause.iss"
+          if (Test-Path $installerScript) {
+            $installerContent = Get-Content -Raw $installerScript
+            if ($installerContent -notmatch '(?im)^AppVersion\s*=' -and $installerContent -notmatch '(?im)^AppVerName\s*=') {
+              $updatedContent = $installerContent -replace '(?im)^(\[Setup\]\r?\n)', "`$1AppVersion=1.0.0`r`n"
+              Set-Content -Path $installerScript -Value $updatedContent -Encoding UTF8NoBOM
+            }
+          }
 
       - name: Install Python dependencies
         shell: pwsh
