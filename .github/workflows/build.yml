@@ -35,6 +35,22 @@ jobs:
             Move-Item -Path (Join-Path $spec.Directory.FullName '*') -Destination src -Force
           }
 
+          $iss = Get-ChildItem -Path src -Filter VibePause.iss -Recurse | Select-Object -First 1
+
+          if (-not $iss) {
+            throw "installer/VibePause.iss not found in extracted archive"
+          }
+
+          $content = Get-Content -Path $iss.FullName -Raw
+          if ($content -notmatch '(?im)^\s*AppVersion\s*=') {
+            if ($content -notmatch '(?im)^\s*\[Setup\]\s*$') {
+              throw "[Setup] section not found in $($iss.FullName)"
+            }
+
+            $content = $content -replace '(?im)^\s*\[Setup\]\s*$', "[Setup]`r`nAppVersion=1.0.0"
+            Set-Content -Path $iss.FullName -Value $content -NoNewline
+          }
+
       - name: Install Python dependencies
         shell: pwsh
         run: |
