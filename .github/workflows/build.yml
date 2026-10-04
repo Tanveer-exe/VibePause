@@ -25,6 +25,15 @@ jobs:
         run: |
           Remove-Item -Recurse -Force src -ErrorAction SilentlyContinue
           Expand-Archive -Path VibePause_src.zip -DestinationPath src -Force
+          $spec = Get-ChildItem -Path src -Filter VibePause.spec -Recurse | Select-Object -First 1
+
+          if (-not $spec) {
+            throw "VibePause.spec not found in extracted archive"
+          }
+
+          if ($spec.Directory.FullName -ne (Resolve-Path src).Path) {
+            Move-Item -Path (Join-Path $spec.Directory.FullName '*') -Destination src -Force
+          }
 
       - name: Install Python dependencies
         shell: pwsh
