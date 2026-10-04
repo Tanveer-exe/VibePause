@@ -25,6 +25,10 @@ jobs:
         run: |
           Remove-Item -Recurse -Force src -ErrorAction SilentlyContinue
           Expand-Archive -Path VibePause_src.zip -DestinationPath src -Force
+          if (Test-Path src\VibePause_src) {
+            Move-Item src\VibePause_src\* src\ -Force
+            Remove-Item -Recurse -Force src\VibePause_src
+          }
 
       - name: Install Python dependencies
         shell: pwsh
