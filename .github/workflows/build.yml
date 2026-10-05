@@ -28,6 +28,19 @@ jobs:
           Remove-Item -Recurse -Force src -ErrorAction SilentlyContinue
           Expand-Archive -Path VibePause_src.zip -DestinationPath src -Force
 
+      - name: Verify version numbers match
+        shell: pwsh
+        run: |
+          $py  = (Select-String -Path "src\VibePause.pyw" -Pattern '^APP_VERSION\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
+          $iss = (Select-String -Path "src\installer\VibePause.iss" -Pattern '^AppVersion=(.+)$').Matches[0].Groups[1].Value.Trim()
+          Write-Host "VibePause.pyw APP_VERSION = $py"
+          Write-Host "VibePause.iss AppVersion  = $iss"
+          if ($py -ne $iss) { throw "Version mismatch: VibePause.pyw says $py but VibePause.iss says $iss" }
+          if ("$env:GITHUB_REF" -like "refs/tags/v*") {
+            $tag = $env:GITHUB_REF_NAME.TrimStart("v")
+            if ($tag -ne $py) { throw "Tag $env:GITHUB_REF_NAME does not match the source version $py. The source ZIP in this commit is not the $tag release." }
+          }
+
       - name: Install Python dependencies
         shell: pwsh
         run: |
@@ -88,13 +101,19 @@ jobs:
           path: src/installer_output/VibePause_Setup.exe
           if-no-files-found: error
 
-      - name: Create GitHub Release
+      - name: Create or update GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$env:GITHUB_REF_NAME" `
-            "src/installer_output/VibePause_Setup.exe" `
-            --title "VibePause $env:GITHUB_REF_NAME" `
-            --generate-notes
+          $tag = $env:GITHUB_REF_NAME
+          $file = "src/installer_output/VibePause_Setup.exe"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release $tag already exists - replacing its installer."
+            gh release upload $tag $file --clobber
+          } else {
+            gh release create $tag $file --title "VibePause $tag - Alpha Release" --prerelease --generate-notes
+          }
+          if ($LASTEXITCODE -ne 0) { throw "Release step failed" }
