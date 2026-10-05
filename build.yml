@@ -1,0 +1,119 @@
+name: Build and Release VibePause
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Unpack VibePause source
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force src -ErrorAction SilentlyContinue
+          Expand-Archive -Path VibePause_src.zip -DestinationPath src -Force
+
+      - name: Verify version numbers match
+        shell: pwsh
+        run: |
+          $py  = (Select-String -Path "src\VibePause.pyw" -Pattern '^APP_VERSION\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
+          $iss = (Select-String -Path "src\installer\VibePause.iss" -Pattern '^AppVersion=(.+)$').Matches[0].Groups[1].Value.Trim()
+          Write-Host "VibePause.pyw APP_VERSION = $py"
+          Write-Host "VibePause.iss AppVersion  = $iss"
+          if ($py -ne $iss) { throw "Version mismatch: VibePause.pyw says $py but VibePause.iss says $iss" }
+          if ("$env:GITHUB_REF" -like "refs/tags/v*") {
+            $tag = $env:GITHUB_REF_NAME.TrimStart("v")
+            if ($tag -ne $py) { throw "Tag $env:GITHUB_REF_NAME does not match the source version $py. The source ZIP in this commit is not the $tag release." }
+          }
+
+      - name: Install Python dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install `
+            pyinstaller `
+            pystray `
+            pillow `
+            winrt-runtime `
+            winrt-Windows.Media.Control `
+            winrt-Windows.Foundation `
+            winrt-Windows.Foundation.Collections
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+
+      - name: Build VibePause EXE
+        working-directory: src
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean VibePause.spec
+
+      - name: Verify EXE
+        shell: pwsh
+        run: |
+          $exe = "src\dist\VibePause\VibePause.exe"
+          if (!(Test-Path $exe)) {
+            Write-Host "VibePause.exe was not created."
+            Get-ChildItem -Recurse "src\dist" -ErrorAction SilentlyContinue
+            throw "EXE missing"
+          }
+          Write-Host "VibePause.exe created successfully."
+
+      - name: Build VibePause Setup.exe
+        working-directory: src
+        shell: pwsh
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
+            "installer\VibePause.iss"
+
+      - name: Verify Setup.exe
+        shell: pwsh
+        run: |
+          $setup = "src\installer_output\VibePause_Setup.exe"
+          if (!(Test-Path $setup)) {
+            Write-Host "VibePause_Setup.exe was not created."
+            Get-ChildItem -Recurse "src\installer_output" -ErrorAction SilentlyContinue
+            throw "Setup.exe missing"
+          }
+          Write-Host "VibePause_Setup.exe created successfully."
+
+      - name: Upload VibePause installer artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: VibePause_Setup
+          path: src/installer_output/VibePause_Setup.exe
+          if-no-files-found: error
+
+      - name: Create or update GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $file = "src/installer_output/VibePause_Setup.exe"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release $tag already exists - replacing its installer."
+            gh release upload $tag $file --clobber
+          } else {
+            gh release create $tag $file --title "VibePause $tag - Alpha Release" --prerelease --generate-notes
+          }
+          if ($LASTEXITCODE -ne 0) { throw "Release step failed" }
