@@ -111,10 +111,16 @@ jobs:
           & $iscc "src\installer\VibePause.iss"
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed ($LASTEXITCODE)" }
 
-      - name: Upload artifacts
+      - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: VibePause
-          path: |
-            src/dist/**
-            src/installer_output/*.exe
+          name: VibePause-Setup
+          path: src/installer_output/VibePause_Setup.exe
+          if-no-files-found: error
+
+      - name: Upload portable build
+        uses: actions/upload-artifact@v4
+        with:
+          name: VibePause-portable
+          path: src/dist/VibePause
+          if-no-files-found: error
