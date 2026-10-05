@@ -17,7 +17,7 @@
   <img alt="Platform" src="https://img.shields.io/badge/PLATFORM-WINDOWS-0f1923?labelColor=555555&style=flat-square">
   <img alt="Python" src="https://img.shields.io/badge/PYTHON-3.12-3776ab?labelColor=555555&style=flat-square">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/LICENSE-MIT-0f6fff?labelColor=555555&style=flat-square"></a>
-  <img alt="Made with Claude and ChatGPT" src="https://img.shields.io/badge/MADE_WITH-CLAUDE_%2B_CHATGPT-8b5cf6?labelColor=555555&style=flat-square">
+  <img alt="Made with Claude" src="https://img.shields.io/badge/MADE_WITH-CLAUDE-8b5cf6?labelColor=555555&style=flat-square">
 </p>
 
 <p align="center">
@@ -56,7 +56,7 @@ You decide whether you are comfortable running third-party software alongside VA
 VibePause is:
 
 - **Not affiliated with, endorsed by, or sponsored by Riot Games or VALORANT**
-- **Not affiliated with Overwolf, isMine or Auto Mute Music**
+- **Independent project not associated with any third-party applications**
 
 If you have concerns about the code, assets, documentation or the project itself, please open an issue.
 
@@ -233,11 +233,11 @@ The only network access is the update check and download described above.
 
 ---
 
-## Built with Claude and ChatGPT
+## Built with Claude
 
-VibePause was built through human and AI collaboration, using **both Claude and ChatGPT** as coding partners, guided by natural-language instructions from start to finish (a lot of "vibe coding").
+VibePause was built through human and AI collaboration, using **Claude** as a coding partner, guided by natural-language instructions from start to finish (a lot of "vibe coding").
 
-They helped with:
+Claude helped with:
 
 - application architecture and the Python code
 - UI design and image assets
@@ -249,13 +249,13 @@ They helped with:
 
 ```text
 Human:  "Can you add this?"
-AI:     "Sure."
+Claude: "Sure."
 Human:  "It broke."
-AI:     "I see the problem."
+Claude: "I see the problem."
 Human:  "Now make it prettier."
-AI:     "Absolutely."
+Claude: "Absolutely."
 Human:  "Can it detect death?"
-AI:     "Let's inspect the log."
+Claude: "Let's inspect the log."
 ```
 
 The project is the result of that back-and-forth, plus testing on a real Windows PC with real matches. AI-written code can contain mistakes, so please read it before trusting it, and report anything that looks wrong.
@@ -264,9 +264,9 @@ The project is the result of that back-and-forth, plus testing on a real Windows
 
 ## Inspiration
 
-VibePause was inspired by **Auto Mute Music by isMine**, an Overwolf app that controls music around VALORANT events. Huge respect to its creator.
+VibePause was inspired by the idea of creating a companion app that enhances the gaming experience by automatically managing media playback based on in-game events.
 
-VibePause has its own code, interface, event detection, assets and Windows media-control implementation. It is **not** a replacement, clone or official continuation of Auto Mute Music, and all rights to that app belong to its creator. If you use Auto Mute Music, please support the original too.
+The application was built from the ground up with its own code, interface, event detection, assets, and Windows media-control implementation. It is an independent project not associated with any third-party applications.
 
 ---
 
@@ -345,7 +345,7 @@ Small improvements are welcome too.
 
 ## Trademarks
 
-VALORANT and Riot Games are trademarks of Riot Games, Inc. Spotify, YouTube, YouTube Music, Apple Music, Google Chrome, Overwolf, Auto Mute Music, Claude, ChatGPT and other mentioned products are trademarks or property of their respective owners.
+VALORANT and Riot Games are trademarks of Riot Games, Inc. Spotify, YouTube, YouTube Music, Apple Music, Google Chrome, Claude, ChatGPT and other mentioned products are trademarks or property of their respective owners.
 
 VibePause does not claim ownership of third-party names, logos or applications. They are used only to identify supported apps, tools and inspiration.
 
@@ -353,7 +353,7 @@ VibePause does not claim ownership of third-party names, logos or applications. 
 
 ## Creator
 
-**Made by tanveer-exe**, together with **Claude** and **ChatGPT**.
+**Made by tanveer-exe**, together with **Claude**.
 
 ## License
 
