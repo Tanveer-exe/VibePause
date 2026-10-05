@@ -1,764 +1,364 @@
-# 🎵 VibePause
+<p align="center">
+  <img src="docs/banner.png" alt="VibePause - Your game. Your music. Automatically synced." width="100%">
+</p>
 
-> **Your game. Your music. Automatically synced.**
+<h1 align="center">VibePause</h1>
 
-VibePause is a lightweight Windows companion application for **VALORANT** that automatically controls your music based on what's happening in-game.
+<p align="center"><b>Your game. Your music. Automatically synced.</b></p>
 
-It monitors VALORANT's locally generated `ShooterGame.log`, detects important gameplay events, and performs the action you configured for that event.
+<p align="center">
+  A lightweight Windows companion for <b>VALORANT</b> that pauses and plays your music for you,
+  based on what is happening in the match.
+</p>
 
-**No overlays.**  
-**No game injection.**  
-**No memory reading.**  
-**No gameplay automation.**
+<p align="center">
+  <a href="https://github.com/Tanveer-exe/VibePause/releases"><img alt="Release" src="https://img.shields.io/github/v/release/Tanveer-exe/VibePause?include_prereleases&label=RELEASE&labelColor=555555&color=ff4655&style=flat-square"></a>
+  <a href="https://github.com/Tanveer-exe/VibePause/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/Tanveer-exe/VibePause/total?label=DOWNLOADS&labelColor=555555&color=3ddbc4&style=flat-square"></a>
+  <img alt="Platform" src="https://img.shields.io/badge/PLATFORM-WINDOWS-0f1923?labelColor=555555&style=flat-square">
+  <img alt="Python" src="https://img.shields.io/badge/PYTHON-3.12-3776ab?labelColor=555555&style=flat-square">
+  <img alt="Open source" src="https://img.shields.io/badge/OPEN-SOURCE-ff4655?labelColor=555555&style=flat-square">
+  <img alt="Made with Claude and ChatGPT" src="https://img.shields.io/badge/MADE_WITH-CLAUDE_%2B_CHATGPT-8b5cf6?labelColor=555555&style=flat-square">
+</p>
 
-Just your music, automatically synced with your VALORANT session.
+<p align="center">
+  <b>No overlay. No game injection. No memory reading. No gameplay automation.</b><br>
+  VibePause reads one local log file and controls Windows media playback. That is all.
+</p>
 
 ---
 
-# ⚠️ Disclaimer & Responsibility
+## Install
 
-> **Please read this section before using VibePause.**
+1. Open the **[Releases page](https://github.com/Tanveer-exe/VibePause/releases)**.
+2. Download **`VibePause_Setup.exe`** from the newest release.
+3. Run it. It installs for your user only, so **no administrator rights are needed**.
+
+> **Windows SmartScreen:** the installer is not code-signed, so Windows may show
+> "Windows protected your PC". Click **More info**, then **Run anyway**.
+> This is normal for small open-source projects. You can read the full source here and build it yourself.
+
+After installing, VibePause starts monitoring automatically. Start a media app (Spotify, YouTube Music, Apple Music or Chrome), launch VALORANT, and play.
+
+To update later, open **Settings** and click **Check for updates**.
+
+---
+
+## Disclaimer and responsibility
+
+> **Please read this before using VibePause.**
 
 VibePause is an **independent community project**.
 
-The developer is **not responsible for any account action, restriction, suspension, ban, compatibility issue, data loss, or other consequence resulting from the use of this software**.
+The developer is **not responsible for any account action, restriction, suspension, ban, compatibility issue, data loss, or other consequence resulting from the use of this software.**
 
-Users are responsible for deciding whether they are comfortable using third-party software alongside VALORANT.
-
-VibePause does **not** guarantee compatibility with Riot Games' systems, policies, Vanguard, or future versions of VALORANT. Riot Games may change its policies or game behavior at any time.
+You decide whether you are comfortable running third-party software alongside VALORANT. VibePause does **not** guarantee compatibility with Riot Games' systems, policies, Vanguard, or future versions of VALORANT. Riot may change its policies or game behavior at any time.
 
 VibePause is:
 
-- **Not affiliated with Riot Games**
-- **Not endorsed by Riot Games**
-- **Not sponsored by Riot Games**
-- **Not affiliated with VALORANT**
-- **Not affiliated with Overwolf**
-- **Not affiliated with isMine**
-- **Not affiliated with Auto Mute Music**
+- **Not affiliated with, endorsed by, or sponsored by Riot Games or VALORANT**
+- **Not affiliated with Overwolf, isMine or Auto Mute Music**
 
-## About the project
-
-This project was built from scratch through human + AI collaboration and extensive experimentation.
-
-The code, interface, assets, icons, documentation, and development workflow were created specifically for VibePause.
-
-This README was also written and refined with the help of ChatGPT.
-
-> And yes, this project was absolutely vibe coded. 😭
-
-If you have concerns regarding VibePause, its code, assets, documentation, or the project itself, please open an issue in this repository.
+If you have concerns about the code, assets, documentation or the project itself, please open an issue.
 
 ---
 
-# 🎵 What is VibePause?
+## What is VibePause?
 
-VibePause watches VALORANT's local `ShooterGame.log` and detects game-state events.
-
-You decide what should happen when each event occurs.
-
-For example:
+VibePause watches VALORANT's local `ShooterGame.log`, detects game-state events, and performs the action you chose for each event.
 
 ```text
-🎵 Music Playing
-        ↓
-🎮 VALORANT Match
-        ↓
-⚔️ Combat Phase
-        ↓
-⏸️ Music Paused
-        ↓
-💀 Player Dies
-        ↓
-🎵 Music Resumes
-        ↓
-🔄 Next Round
-        ↓
-⏸️ Music Paused
+Music playing
+     |
+Round starts  ->  music pauses
+     |
+You die       ->  music resumes
+     |
+Next round    ->  music pauses
 ```
 
-You don't need to Alt+Tab out of the game or manually control your music.
-
-VibePause handles it for you.
+No Alt+Tab. No reaching for your media keys while you play.
 
 ---
 
-# ✨ Features
+## Features
 
-## 🎮 VALORANT Event Detection
+### Events
 
-VibePause currently supports the following events:
-
-| Event | Description |
+| Event | Triggered when |
 |---|---|
-| ⚔️ Start Combat Phase | Triggered when a round enters combat |
-| 🎮 Game Start | Triggered when the match becomes active |
-| 🛒 Start Shopping Phase | Triggered when the buy/shop phase opens |
-| 🏁 Game Finish | Triggered when the match reaches its end |
-| 🏠 Back to Lobby | Triggered when returning to the main menu |
-| 👤 Character Select | Triggered when entering character selection |
-| 💀 On Death | Triggered when the local player dies |
-| ♻️ Revive with Ultimate | Triggered when the player is resurrected |
+| Start combat phase | A round becomes active |
+| On death | The local player dies during a round |
+| Game start | The match becomes active |
+| Start shopping phase | The buy phase opens |
+| Game finish | The match ends |
+| Back to lobby | You return to the main menu |
+| Character select | Agent selection opens |
+| Revive with ULT | The player is resurrected |
 
-Each event can have its own action.
-
----
-
-# 🎵 Music Actions
-
-Every event can be configured independently.
-
-The action button cycles through:
+Every event has its own action. Click an event's icon to cycle:
 
 ```text
-None → Play → Pause → None
+None  ->  Play  ->  Pause  ->  None
 ```
 
-### `None`
+- **None**: do nothing
+- **Play**: start or resume your music
+- **Pause**: pause your music
 
-Do nothing.
+Default setup: pause when combat starts, play for everything else. You can change any of them, and **Reset** restores the defaults.
 
-### `Play`
+### Supported media
 
-Start or resume your music.
+VibePause talks to the **Windows System Media Transport Controls (GSMTC)**, the same system your keyboard media keys and the volume flyout use. It does not control any website or app directly.
 
-### `Pause`
+Works with:
 
-Pause your music.
+- Google Chrome
+- YouTube Music
+- Apple Music
+- Spotify
 
-This keeps the interface compact without filling the application with unnecessary controls.
+If more than one of these has a media session, VibePause prefers a supported music player over other sessions.
 
----
+### On death
 
-# 🎧 Supported Media
+VibePause can detect when the **local player dies** during an active round, so you can resume music while you wait.
 
-VibePause uses the **Windows System Media Transport Controls / GSMTC** system to communicate with supported media sessions.
+Detection reads a marker VALORANT writes into its log. A short grace period after each round starts avoids false triggers from reconnect or spectate markers that can appear while a map loads.
 
-Currently supported applications include:
+VALORANT's log format is not documented or guaranteed. Riot can change it in any update, and death detection (like every other event) may need adjusting afterwards.
 
-- 🌐 Google Chrome
-- 🎵 YouTube Music
-- 🍎 Apple Music
-- 🟢 Spotify
+### Automatic monitoring
 
-VibePause does not need to directly control the websites or applications.
+VibePause starts monitoring as soon as it launches. If VALORANT is not running, it waits for the log to appear.
 
-It communicates through Windows' media-control system instead.
+### Event detection details
 
----
+VALORANT does not always write the same sequence of messages, so the detector accepts several known variants and also handles:
 
-# 💀 On Death
+- starting VALORANT while VibePause is already running
+- going into a new match without passing through the main menu
+- post-match transitions
+- VALORANT rotating or truncating its log file
 
-VibePause can detect when the **local player dies** during an active round.
+Repeated copies of the same event within a short window are ignored so a single moment does not trigger twice. Round ends are tracked internally but do not trigger an action.
 
-This allows configurations such as:
+### Windows desktop experience
 
-```text
-Start Combat → Pause
-On Death     → Play
-Next Combat  → Pause
-```
+- Custom dark title bar and fixed-size window
+- Taskbar and Alt+Tab entry with the VibePause icon
+- System tray icon
+- Close to tray option
+- Optional start with Windows
+- No console window
 
-Result:
+### System tray
 
-```text
-⚔️ Round starts
-      ↓
-🎵 Music pauses
-      ↓
-💀 You die
-      ↓
-🎵 Music resumes
-      ↓
-🔄 Next round
-      ↓
-🎵 Music pauses again
-```
-
-Death detection is based on information written by VALORANT into its local log.
-
-Because VALORANT's log format can change between updates, detection behavior may change if Riot modifies its logging system.
-
----
-
-# 🤖 Automatic Monitoring
-
-VibePause automatically starts monitoring when the application launches.
-
-```text
-Launch VibePause
-       ↓
-Start monitoring automatically
-       ↓
-Wait for VALORANT
-       ↓
-Detect events
-       ↓
-Control music
-```
-
-If VALORANT is not running, VibePause simply waits for the log to become available.
-
----
-
-# 🔄 Robust Event Detection
-
-VibePause is designed to handle the fact that VALORANT does not always produce exactly the same sequence of log messages.
-
-The event detector supports multiple known variants of game-state transitions and handles situations such as:
-
-- Starting VALORANT while VibePause is already running
-- Entering a new match without returning through the main menu
-- Post-match transitions
-- Character-select transitions
-- Game-state transitions
-- Round starts
-- Round ends
-- Revives
-- VALORANT log rotation
-- VALORANT log truncation
-
-Duplicate events are also filtered within a short window to prevent the same event from triggering multiple times.
-
----
-
-# 🖥️ Windows Desktop Experience
-
-VibePause is designed to behave like a normal Windows desktop application.
-
-It includes:
-
-- Custom borderless window
-- Custom title bar
-- Custom VibePause branding
-- Fixed-size polished interface
-- Windows taskbar support
-- Alt+Tab support
-- Custom application icon
-- System tray support
-- Close-to-tray option
-- Start with Windows option
-- Automatic monitoring
-- No command prompt window required
-
-VibePause is packaged as a standalone Windows application.
-
----
-
-# 🔔 System Tray
-
-VibePause can continue running in the Windows system tray.
-
-Tray controls include:
+VibePause can keep running quietly in the tray:
 
 - **Open VibePause**
 - **Start VibePause**
 - **Stop VibePause**
 - **Exit VibePause**
 
-This allows VibePause to run quietly in the background while you play.
+Whether the window's **X** button sends VibePause to the tray or exits it is a setting (**Settings > Close button sends to tray**).
+
+### Start with Windows
+
+Optional. When Windows starts VibePause, it opens straight into the tray and keeps monitoring in the background.
+
+### Settings
+
+- Event delay (milliseconds before an action runs)
+- Close button sends to tray
+- Check for updates
+- Start with Windows (top bar)
+
+Settings are saved locally.
+
+### Updates
+
+Open **Settings** and click **Check for updates**.
+
+- If a newer release exists, VibePause says so and asks before doing anything. If you agree, it downloads the installer, closes itself, and starts the installer.
+- If you are already on the latest version, it tells you: "No update found."
+- If GitHub cannot be reached, or a release has no installer, it shows a specific message.
+
+Update checks contact the public GitHub API for this repository's releases. Nothing else is sent.
 
 ---
 
-# 🚀 Start with Windows
+## UI and design
 
-VibePause can optionally start automatically when Windows starts.
+VibePause has a dark, VALORANT-inspired look: deep navy, off-white and signature red, with teal for "play". Icons and graphics are image assets made for this project.
 
-When launched through Windows startup, VibePause can start directly in the system tray while continuing to monitor VALORANT in the background.
-
----
-
-# ⚙️ Settings
-
-VibePause includes configurable settings for:
-
-- Event actions
-- Event delay
-- Start with Windows
-- Close to system tray
-- Update checking
-
-The application saves its settings locally so your configuration is preserved between launches.
+The official VibePause icon uses a pause-bar design on a dark navy background with pink and cyan accents.
 
 ---
 
-# 🔄 Updates
+## Does VibePause modify VALORANT?
 
-VibePause includes an integrated **Check for Updates** system.
+No. VibePause is an external companion app. It does **not**:
 
-The intended update workflow is:
+- inject DLLs into VALORANT
+- read VALORANT process memory
+- modify VALORANT files or game assets
+- automate gameplay or send gameplay input
+- interact with Vanguard
+- modify network packets
+- provide gameplay advantages
+- draw an in-game overlay
+
+How it works:
 
 ```text
-Developer changes VibePause
-          ↓
-Commit / Push to GitHub
-          ↓
-GitHub Actions builds VibePause
-          ↓
-New release is published
-          ↓
-VibePause checks for updates
-          ↓
-New installer is downloaded
-          ↓
-VibePause is updated
+VALORANT -> ShooterGame.log -> VibePause -> Windows media controls -> your music
 ```
 
-The goal is to make updating VibePause as simple as possible for users.
+The only input is the local log file. The only output is a Play or Pause request to Windows media playback. If the Windows media interface is unavailable on a machine, VibePause falls back to sending the standard Windows Play/Pause media key, which is the same as pressing that key on a keyboard.
 
-No manually downloading GitHub Actions artifacts should be necessary for normal releases.
-
----
-
-# 🎨 UI & Visual Design
-
-VibePause was designed from the ground up with a dark, VALORANT-inspired aesthetic.
-
-The project contains custom visual assets including:
-
-- VibePause logo
-- Application icon
-- Media application icons
-- Monitoring icon
-- Event icons
-- UI graphics
-- Custom title bar
-- Custom buttons
-- Dark interface components
-- Status indicators
-
-The official VibePause icon uses the project's signature pause-bar design with a dark navy background and pink/cyan accents.
-
-All VibePause-specific artwork and UI assets were created for this project.
+> **Important:** this is a description of what the software does. It is **not** a guarantee from Riot Games that the software is permitted. Riot's policies and game behavior can change at any time.
 
 ---
 
-# 💡 Inspiration
+## Privacy
 
-VibePause was inspired by **Auto Mute Music by isMine**, an Overwolf application that provides automatic music control based on events in VALORANT.
+VibePause runs locally. It does not need or collect:
 
-The idea of automatically controlling music around VALORANT gameplay events was an important inspiration for this project.
+- your Riot account credentials or authentication tokens
+- your game memory or gameplay input
+- your network traffic
 
-Huge respect to the creator of Auto Mute Music.
-
-The original application inspired the idea behind VibePause, but VibePause has its own:
-
-- Implementation
-- Codebase
-- Interface
-- Architecture
-- Assets
-- Event detection system
-- Windows media-control implementation
-- Development workflow
-
-VibePause is **not a replacement, clone, or official continuation** of Auto Mute Music.
-
-All rights to Auto Mute Music and its original work belong to its respective creator.
-
-If you're using Auto Mute Music, please support the original creator too. ❤️
+The only network access is the update check and download described above.
 
 ---
 
-# 🔒 Does VibePause Modify VALORANT?
+## Built with Claude and ChatGPT
 
-No.
+VibePause was built through human and AI collaboration, using **both Claude and ChatGPT** as coding partners, guided by natural-language instructions from start to finish (a lot of "vibe coding").
 
-VibePause is designed as an external companion application.
+They helped with:
 
-It does **not**:
-
-- ❌ Inject DLLs into VALORANT
-- ❌ Read VALORANT process memory
-- ❌ Modify VALORANT files
-- ❌ Modify game assets
-- ❌ Automate gameplay
-- ❌ Control your mouse
-- ❌ Control your keyboard
-- ❌ Interact with Vanguard
-- ❌ Modify network packets
-- ❌ Provide gameplay advantages
-- ❌ Use an in-game overlay
-- ❌ Inject anything into the game
-
-The intended architecture is simply:
+- application architecture and the Python code
+- UI design and image assets
+- VALORANT event detection, including death detection
+- Windows media control and system tray behavior
+- settings, startup option and the update checker
+- PyInstaller packaging, the Inno Setup installer and GitHub Actions
+- debugging, polish and this documentation
 
 ```text
-VALORANT
-    │
-    ▼
-ShooterGame.log
-    │
-    ▼
-VibePause
-    │
-    ▼
-Event Detection
-    │
-    ▼
-Configured Action
-    │
-    ▼
-Windows Media System
-    │
-    ▼
-Your Music
+Human:  "Can you add this?"
+AI:     "Sure."
+Human:  "It broke."
+AI:     "I see the problem."
+Human:  "Now make it prettier."
+AI:     "Absolutely."
+Human:  "Can it detect death?"
+AI:     "Let's inspect the log."
 ```
 
-VibePause only needs the information written to the local VALORANT log to determine game events.
-
-> **Important:** This does not constitute a guarantee from Riot Games that the software is permitted. Riot's policies and game behavior can change at any time.
+The project is the result of that back-and-forth, plus testing on a real Windows PC with real matches. AI-written code can contain mistakes, so please read it before trusting it, and report anything that looks wrong.
 
 ---
 
-# 🛡️ Privacy
+## Inspiration
 
-VibePause is designed to operate locally.
+VibePause was inspired by **Auto Mute Music by isMine**, an Overwolf app that controls music around VALORANT events. Huge respect to its creator.
 
-The core application does not need:
-
-- Your Riot account credentials
-- Your VALORANT password
-- Your Riot authentication token
-- Your game memory
-- Your gameplay input
-- Your network traffic
-
-The main game-event detection mechanism is the locally generated:
-
-```text
-ShooterGame.log
-```
-
-Update functionality may communicate with GitHub to check for and download published VibePause releases.
+VibePause has its own code, interface, event detection, assets and Windows media-control implementation. It is **not** a replacement, clone or official continuation of Auto Mute Music, and all rights to that app belong to its creator. If you use Auto Mute Music, please support the original too.
 
 ---
 
-# 🧠 100% Vibe Coded
+## Tech stack
 
-## Yes. Seriously.
-
-VibePause was developed using **ChatGPT as an AI coding partner**.
-
-Natural-language instructions were used throughout the development process to design, build, debug, test, improve, and refine the application.
-
-ChatGPT was heavily involved in:
-
-- 🧠 Application architecture
-- 🐍 Python development
-- 🎨 UI design
-- 🖼️ Asset generation
-- 🎯 VALORANT event detection
-- 💀 Death detection
-- 🎵 Windows media control
-- 🪟 Windows desktop behavior
-- 🔔 System tray functionality
-- ⚙️ Settings
-- 🚀 Startup functionality
-- 📦 PyInstaller packaging
-- 🛠️ Inno Setup installer
-- ☁️ GitHub Actions
-- 🔄 Update system
-- 🐛 Debugging
-- ✨ UI polishing
-- 📖 Documentation
-
-The final project is the result of **human + AI collaboration**.
-
-> **The code, UI, images, icons, debugging process, documentation, and development workflow were all created through extensive vibe coding with ChatGPT.**
-
-And yes...
-
-```text
-Human: "Can you add this?"
-
-ChatGPT: "Sure."
-
-Human: "It broke."
-
-ChatGPT: "I see the problem."
-
-Human: "Now make it prettier."
-
-ChatGPT: "Absolutely."
-
-Human: "Can it detect death?"
-
-ChatGPT: "Let's inspect the log."
-
-Human: 💀
-```
+- Python and Tkinter
+- pystray and Pillow
+- Windows Runtime (GSMTC) through the `winrt` packages
+- PyInstaller (one-folder build)
+- Inno Setup (installer)
+- GitHub Actions (automatic builds and releases)
 
 ---
 
-# 🧰 Tech Stack
-
-VibePause is built using:
-
-- **Python**
-- **Tkinter**
-- **Pystray**
-- **Pillow**
-- **Windows Runtime / GSMTC**
-- **PyInstaller**
-- **Inno Setup**
-- **GitHub Actions**
-
-### Development Environment
-
-The project is primarily developed and tested on Windows.
-
----
-
-# 📁 Project Structure
+## Project structure
 
 ```text
 VibePause/
-│
-├── VibePause.pyw
-├── VibePause.spec
-├── VibePause.ico
-│
-├── assets/
-│   ├── media icons
-│   ├── event icons
-│   ├── UI graphics
-│   └── other visual assets
-│
-├── installer/
-│   └── VibePause.iss
-│
-└── .github/
-    └── workflows/
-        └── build.yml
+|-- VibePause_src.zip        All application source (see below)
+|-- README.md
+|-- docs/                    Images used by this README
+`-- .github/
+    `-- workflows/
+        `-- build.yml        Builds the installer and publishes releases
 ```
 
----
-
-# 📦 Building VibePause
-
-The project uses:
-
-### PyInstaller
-
-to package the Python application into a standalone Windows application.
-
-### Inno Setup
-
-to create the Windows installer.
-
-### GitHub Actions
-
-to automate Windows builds.
-
-The intended development workflow is:
+`VibePause_src.zip` contains:
 
 ```text
-Edit source
-    ↓
-Commit
-    ↓
-Push to GitHub
-    ↓
-GitHub Actions
-    ↓
-Build EXE
-    ↓
-Build Installer
-    ↓
-Publish Release
+VibePause.pyw        Main application
+VibePause.spec       PyInstaller configuration
+VibePause.ico        Application icon
+assets/              Media icons, event icons and UI graphics
+installer/           Inno Setup script and installer images
 ```
 
----
+## Building VibePause
 
-# 🐛 Development Status
+Releases are built by GitHub Actions:
 
-VibePause is currently an **alpha-stage project**.
+1. Pushing a tag such as `v0.1.2` starts the build.
+2. The workflow unpacks `VibePause_src.zip` and checks that the tag, `APP_VERSION` and the installer version all match.
+3. PyInstaller builds the app, Inno Setup builds `VibePause_Setup.exe`.
+4. The installer is attached to the GitHub release for that tag.
 
-It is actively being developed and improved.
-
-Things may break.
-
-Features may change.
-
-VALORANT updates may change log behavior.
-
-Windows updates may change media-control behavior.
-
-The application is primarily being developed for:
-
-- Experimentation
-- Learning
-- Personal use
-- Open-source development
-- Building a useful community utility
-
-If something breaks, please open an issue and include as much information as possible.
+To build locally on Windows: install Python 3.12, then `pip install pyinstaller pystray pillow winrt-runtime winrt-Windows.Media.Control winrt-Windows.Foundation winrt-Windows.Foundation.Collections`, run `pyinstaller VibePause.spec` inside the unpacked source, then compile `installer/VibePause.iss` with Inno Setup.
 
 ---
 
-# 🤝 Open Source
+## Development status
 
-VibePause is intended to be a **fully open-source project**.
+VibePause is **alpha software**. It is developed mostly for learning, experimentation and personal use, and shared in case it is useful to others.
 
-You are encouraged to:
+Things may break. Features may change. VALORANT updates can change log behavior, and Windows updates can change media-control behavior. There is no guarantee that:
 
-- Read the source code
-- Fork the repository
-- Modify the application
-- Experiment with the code
-- Add new features
-- Improve existing features
-- Fix bugs
-- Create your own builds
-- Submit pull requests
-- Create your own version of VibePause
+- every VALORANT update will work immediately
+- every media app will behave identically
+- every log event will stay detectable
+- every Windows version will behave the same
 
-If you want to completely change the application:
-
-**Go for it.**
-
-Want a different UI?
-
-Change it.
-
-Want new events?
-
-Add them.
-
-Want support for another media player?
-
-Implement it.
-
-Want to completely turn VibePause into something else?
-
-Fork it and build your version.
-
-That's the point of making the project open source.
+If something breaks, please open an issue with as much detail as you can (what you were doing, which media app, and what VibePause showed).
 
 ---
 
-# 🤝 Contributions
+## Open source and contributing
 
-Contributions, suggestions, bug reports, and improvements are welcome.
+VibePause is an open-source project. You are welcome to read the code, fork it, change it, add events or media players, fix bugs, and send pull requests.
 
-If you have an idea:
-
-1. Open an issue
-2. Explain the idea
-3. Discuss the implementation
-4. Submit a pull request if you want to implement it
+1. Open an issue to explain your idea or bug.
+2. Discuss the approach.
+3. Send a pull request if you would like to implement it.
 
 Small improvements are welcome too.
 
-You don't need to completely rewrite the application to contribute.
+---
+
+## Trademarks
+
+VALORANT and Riot Games are trademarks of Riot Games, Inc. Spotify, YouTube, YouTube Music, Apple Music, Google Chrome, Overwolf, Auto Mute Music, Claude, ChatGPT and other mentioned products are trademarks or property of their respective owners.
+
+VibePause does not claim ownership of third-party names, logos or applications. They are used only to identify supported apps, tools and inspiration.
 
 ---
 
-# 🧪 Experimental Nature
+## Creator
 
-VibePause is an independent project and should be treated as experimental software.
+**Made by tanveer-exe**, together with **Claude** and **ChatGPT**.
 
-There is no guarantee that:
+## License
 
-- Every VALORANT update will work immediately
-- Every media application will behave identically
-- Every log event will remain detectable
-- Every Windows version will behave identically
-- Future versions of VALORANT will preserve the same log format
-
-The project will be updated as these systems change.
+VibePause is open-source software. The license terms will be published in this repository's `LICENSE` file. Until that file is added, please ask before reusing the code or assets in your own projects.
 
 ---
 
-# ©️ Trademarks
-
-VALORANT and Riot Games are trademarks of Riot Games, Inc.
-
-Spotify, YouTube, YouTube Music, Apple Music, Google Chrome, Overwolf, Auto Mute Music, and other mentioned products are trademarks or properties of their respective owners.
-
-VibePause does not claim ownership of third-party trademarks, names, logos, or applications.
-
-Third-party names are used only to identify supported applications or explain project inspiration.
-
----
-
-# 👨‍💻 Creator
-
-**Made using ChatGPT by tanveer-exe**
-
-VibePause was created through extensive human + AI collaboration.
-
-The project was designed, developed, debugged, packaged, documented, and continuously improved with ChatGPT as an AI development partner.
-
----
-
-# 📜 License
-
-VibePause is intended to be released as open-source software.
-
-See the repository's `LICENSE` file for the exact terms.
-
-If you fork VibePause, you're free to take the project in your own direction according to the project's license.
-
----
-
-# ❤️ Why VibePause?
-
-Because sometimes you just want:
-
-```text
-🎵 Music ON
-        ↓
-🎮 Queue VALORANT
-        ↓
-👤 Character Select
-        ↓
-🛒 Buy Phase
-        ↓
-⚔️ Round Starts
-        ↓
-🎵 Music changes
-        ↓
-💀 You die
-        ↓
-🎵 Music changes
-        ↓
-♻️ Revive
-        ↓
-🎵 Music changes
-        ↓
-🔄 Next Round
-        ↓
-🏁 Match Ends
-        ↓
-🏠 Back to Lobby
-```
-
-No Alt+Tab.
-
-No manually pausing Spotify.
-
-No reaching for your music controls while playing.
-
-No overlay.
-
-No unnecessary complications.
-
-Just:
-
-```text
-🎮 Your game
-      +
-🎵 Your music
-      ↓
-   VibePause
-```
-
----
-
-# 🎵 VibePause
-
-### Your game. Your music. Automatically synced.
-
-**Made with Python + ChatGPT + a lot of vibe coding. ❤️**
+<p align="center"><b>Your game. Your music. Automatically synced.</b></p>
