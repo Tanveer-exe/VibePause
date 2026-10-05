@@ -16,7 +16,7 @@
   <a href="https://github.com/Tanveer-exe/VibePause/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/Tanveer-exe/VibePause/total?label=DOWNLOADS&labelColor=555555&color=3ddbc4&style=flat-square"></a>
   <img alt="Platform" src="https://img.shields.io/badge/PLATFORM-WINDOWS-0f1923?labelColor=555555&style=flat-square">
   <img alt="Python" src="https://img.shields.io/badge/PYTHON-3.12-3776ab?labelColor=555555&style=flat-square">
-  <img alt="Open source" src="https://img.shields.io/badge/OPEN-SOURCE-ff4655?labelColor=555555&style=flat-square">
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/LICENSE-MIT-0f6fff?labelColor=555555&style=flat-square"></a>
   <img alt="Made with Claude and ChatGPT" src="https://img.shields.io/badge/MADE_WITH-CLAUDE_%2B_CHATGPT-8b5cf6?labelColor=555555&style=flat-square">
 </p>
 
@@ -307,7 +307,7 @@ installer/           Inno Setup script and installer images
 
 Releases are built by GitHub Actions:
 
-1. Pushing a tag such as `v0.1.2` starts the build.
+1. Pushing a tag such as `v0.1.3` starts the build.
 2. The workflow unpacks `VibePause_src.zip` and checks that the tag, `APP_VERSION` and the installer version all match.
 3. PyInstaller builds the app, Inno Setup builds `VibePause_Setup.exe`.
 4. The installer is attached to the GitHub release for that tag.
@@ -357,7 +357,9 @@ VibePause does not claim ownership of third-party names, logos or applications. 
 
 ## License
 
-VibePause is open-source software. The license terms will be published in this repository's `LICENSE` file. Until that file is added, please ask before reusing the code or assets in your own projects.
+VibePause is released under the **[MIT License](LICENSE)**. You can use, copy, modify and distribute it, including in your own projects, as long as you keep the copyright notice.
+
+The names VALORANT and Riot Games, and the names and logos of the supported media apps, belong to their owners and are not covered by this license.
 
 ---
 
