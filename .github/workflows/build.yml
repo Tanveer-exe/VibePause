@@ -26,23 +26,19 @@ jobs:
           python-version: "3.11"
 
       # --------------------------------------------------
-      # Download source archive
+      # Verify source archive exists
       # --------------------------------------------------
-      - name: Download VibePause source
+      - name: Verify source archive
         shell: pwsh
         run: |
-          # Keep your existing download command here if
-          # VibePause_src.zip is downloaded from somewhere.
-          #
-          # If the ZIP is already present in the repository,
-          # this step does nothing.
-
           if (!(Test-Path "VibePause_src.zip")) {
             throw "VibePause_src.zip was not found."
           }
 
+          Write-Host "Found VibePause_src.zip"
+
       # --------------------------------------------------
-      # Inspect ZIP layout
+      # Inspect ZIP
       # --------------------------------------------------
       - name: Inspect source archive
         shell: pwsh
@@ -51,6 +47,7 @@ jobs:
 
           $zip = [System.IO.Compression.ZipFile]::OpenRead("VibePause_src.zip")
 
+          Write-Host ""
           Write-Host "===== VibePause_src.zip contents ====="
 
           foreach ($entry in $zip.Entries) {
@@ -58,137 +55,257 @@ jobs:
           }
 
           Write-Host "======================================"
+          Write-Host ""
 
           $zip.Dispose()
 
       # --------------------------------------------------
-      # Unpack source
+      # Unpack VibePause source
       # --------------------------------------------------
       - name: Unpack VibePause source
         shell: pwsh
         run: |
-          Write-Host "Cleaning old source directory..."
+          $extractRoot = Join-Path $env:RUNNER_TEMP "VibePause_source"
 
-          Remove-Item -Recurse -Force "src" -ErrorAction SilentlyContinue
-          Remove-Item -Recurse -Force ".tmp_vibepause" -ErrorAction SilentlyContinue
+          Write-Host "Cleaning previous extraction..."
 
-          New-Item -ItemType Directory -Path "src" | Out-Null
+          Remove-Item `
+            -Recurse `
+            -Force `
+            "src" `
+            -ErrorAction SilentlyContinue
+
+          Remove-Item `
+            -Recurse `
+            -Force `
+            $extractRoot `
+            -ErrorAction SilentlyContinue
+
+          New-Item `
+            -ItemType Directory `
+            -Path $extractRoot `
+            -Force | Out-Null
+
+          New-Item `
+            -ItemType Directory `
+            -Path "src" `
+            -Force | Out-Null
 
           Write-Host "Extracting VibePause_src.zip..."
 
           Expand-Archive `
             -Path "VibePause_src.zip" `
-            -DestinationPath ".tmp_vibepause" `
+            -DestinationPath $extractRoot `
             -Force
 
-          Write-Host "Extracted archive structure:"
-          Get-ChildItem ".tmp_vibepause" -Recurse |
+          Write-Host ""
+          Write-Host "===== Extracted archive ====="
+
+          Get-ChildItem `
+            -Path $extractRoot `
+            -Recurse |
             Select-Object FullName
 
+          Write-Host "============================="
+          Write-Host ""
+
           # ------------------------------------------------
-          # Your ZIP contains:
-          #
-          # src/
-          #   VibePause.pyw
-          #
-          # installer/
-          #   VibePause.iss
-          #
-          # assets/
-          #
-          # VibePause.spec
+          # Find VibePause.pyw anywhere in the archive.
+          # This makes the workflow tolerant of an extra
+          # top-level folder if the ZIP structure changes.
           # ------------------------------------------------
 
+          $entry = Get-ChildItem `
+            -Path $extractRoot `
+            -Filter "VibePause.pyw" `
+            -File `
+            -Recurse |
+            Select-Object -First 1
+
+          if ($null -eq $entry) {
+            Write-Host "VibePause.pyw was not found."
+            Write-Host ""
+            Write-Host "Archive contents:"
+            
+            Get-ChildItem `
+              -Path $extractRoot `
+              -Recurse |
+              Select-Object FullName
+
+            throw "VibePause.pyw was not found in VibePause_src.zip"
+          }
+
+          # The directory containing VibePause.pyw is the
+          # actual source directory.
+          $sourceRoot = $entry.Directory.FullName
+
+          Write-Host "Detected application source root:"
+          Write-Host $sourceRoot
+
+          # ------------------------------------------------
+          # Copy the source directory contents into src
+          # ------------------------------------------------
+
+          Write-Host ""
           Write-Host "Copying application source..."
 
-          if (Test-Path ".tmp_vibepause\src") {
-            Copy-Item `
-              ".tmp_vibepause\src\*" `
-              "src" `
-              -Recurse `
-              -Force
-          }
-          else {
-            throw "The ZIP does not contain a src directory."
-          }
+          Copy-Item `
+            -Path (Join-Path $sourceRoot "*") `
+            -Destination "src" `
+            -Recurse `
+            -Force
 
-          Write-Host "Copying installer..."
+          # ------------------------------------------------
+          # Find installer directory.
+          # ------------------------------------------------
 
-          if (Test-Path ".tmp_vibepause\installer") {
-            New-Item `
-              -ItemType Directory `
-              -Path "src\installer" `
-              -Force | Out-Null
+          $installerFile = Get-ChildItem `
+            -Path $extractRoot `
+            -Filter "VibePause.iss" `
+            -File `
+            -Recurse |
+            Select-Object -First 1
 
-            Copy-Item `
-              ".tmp_vibepause\installer\*" `
-              "src\installer" `
-              -Recurse `
-              -Force
-          }
-          else {
-            throw "The ZIP does not contain an installer directory."
+          if ($null -eq $installerFile) {
+            throw "VibePause.iss was not found in VibePause_src.zip"
           }
 
-          Write-Host "Copying assets..."
+          $installerRoot = $installerFile.Directory.FullName
 
-          if (Test-Path ".tmp_vibepause\assets") {
+          Write-Host ""
+          Write-Host "Detected installer directory:"
+          Write-Host $installerRoot
+
+          New-Item `
+            -ItemType Directory `
+            -Path "src\installer" `
+            -Force | Out-Null
+
+          Copy-Item `
+            -Path (Join-Path $installerRoot "*") `
+            -Destination "src\installer" `
+            -Recurse `
+            -Force
+
+          # ------------------------------------------------
+          # Copy assets
+          # ------------------------------------------------
+
+          $assetsDir = Get-ChildItem `
+            -Path $extractRoot `
+            -Directory `
+            -Recurse |
+            Where-Object { $_.Name -eq "assets" } |
+            Select-Object -First 1
+
+          if ($null -ne $assetsDir) {
+
+            Write-Host ""
+            Write-Host "Copying assets..."
+
             New-Item `
               -ItemType Directory `
               -Path "src\assets" `
               -Force | Out-Null
 
             Copy-Item `
-              ".tmp_vibepause\assets\*" `
-              "src\assets" `
+              -Path (Join-Path $assetsDir.FullName "*") `
+              -Destination "src\assets" `
               -Recurse `
               -Force
           }
 
           # ------------------------------------------------
-          # Copy root-level files
+          # Find and copy VibePause.spec
           # ------------------------------------------------
 
-          $rootFiles = @(
-            "VibePause.spec",
-            "VibePause.ico",
+          $specFile = Get-ChildItem `
+            -Path $extractRoot `
+            -Filter "VibePause.spec" `
+            -File `
+            -Recurse |
+            Select-Object -First 1
+
+          if ($null -eq $specFile) {
+            throw "VibePause.spec was not found in VibePause_src.zip"
+          }
+
+          Copy-Item `
+            -Path $specFile.FullName `
+            -Destination "src\VibePause.spec" `
+            -Force
+
+          # ------------------------------------------------
+          # Find and copy VibePause.ico
+          # ------------------------------------------------
+
+          $iconFile = Get-ChildItem `
+            -Path $extractRoot `
+            -Filter "VibePause.ico" `
+            -File `
+            -Recurse |
+            Select-Object -First 1
+
+          if ($null -ne $iconFile) {
+            Copy-Item `
+              -Path $iconFile.FullName `
+              -Destination "src\VibePause.ico" `
+              -Force
+          }
+
+          # ------------------------------------------------
+          # Copy legal files
+          # ------------------------------------------------
+
+          $legalFiles = @(
             "PRIVACY_POLICY.md",
             "TERMS_AND_CONDITIONS.md",
             "THIRD_PARTY_NOTICES.md"
           )
 
-          foreach ($file in $rootFiles) {
+          foreach ($file in $legalFiles) {
 
-            $source = ".tmp_vibepause\$file"
+            $found = Get-ChildItem `
+              -Path $extractRoot `
+              -Filter $file `
+              -File `
+              -Recurse |
+              Select-Object -First 1
 
-            if (Test-Path $source) {
+            if ($null -ne $found) {
 
               Write-Host "Copying $file..."
 
               Copy-Item `
-                $source `
-                "src\$file" `
+                -Path $found.FullName `
+                -Destination "src\$file" `
                 -Force
             }
           }
 
+          # ------------------------------------------------
           # Cleanup
+          # ------------------------------------------------
+
           Remove-Item `
             -Recurse `
             -Force `
-            ".tmp_vibepause"
+            $extractRoot
 
           # ------------------------------------------------
-          # Verify final source layout
+          # Show final layout
           # ------------------------------------------------
 
           Write-Host ""
           Write-Host "===== FINAL SOURCE LAYOUT ====="
 
-          Get-ChildItem "src" -Recurse |
+          Get-ChildItem `
+            -Path "src" `
+            -Recurse |
             Select-Object FullName
 
           Write-Host "================================"
+          Write-Host ""
 
       # --------------------------------------------------
       # Verify source layout
@@ -205,11 +322,14 @@ jobs:
           foreach ($file in $required) {
 
             if (!(Test-Path $file)) {
+
               Write-Host ""
               Write-Host "===== DEBUG: SOURCE TREE ====="
 
               if (Test-Path "src") {
-                Get-ChildItem "src" -Recurse |
+                Get-ChildItem `
+                  -Path "src" `
+                  -Recurse |
                   Select-Object FullName
               }
 
@@ -234,53 +354,63 @@ jobs:
           $issFile = "src\installer\VibePause.iss"
 
           if (!(Test-Path $pyFile)) {
-            throw "Cannot find path $pyFile"
+            throw "Cannot find path '$pyFile'"
           }
 
           if (!(Test-Path $issFile)) {
-            throw "Cannot find path $issFile"
+            throw "Cannot find path '$issFile'"
           }
 
           Write-Host "Reading version from $pyFile..."
 
-          $pyContent = Get-Content $pyFile -Raw
+          $pyContent = Get-Content `
+            $pyFile `
+            -Raw
 
           Write-Host "Reading version from $issFile..."
 
-          $issContent = Get-Content $issFile -Raw
+          $issContent = Get-Content `
+            $issFile `
+            -Raw
 
-          # -----------------------------------------------
+          # ------------------------------------------------
           # Python version
-          # -----------------------------------------------
+          # Actual VibePause.pyw contains:
+          #
+          # APP_VERSION = "0.1.3"
+          # ------------------------------------------------
 
           $pyMatch = [regex]::Match(
             $pyContent,
-            '(?m)^\s*(?:APP_VERSION|VERSION|__version__)\s*=\s*["'']([^"'']+)["'']'
+            '(?m)^\s*APP_VERSION\s*=\s*["'']([^"'']+)["'']'
           )
 
           if (!$pyMatch.Success) {
-            throw "Could not find application version in $pyFile"
+            throw "Could not find APP_VERSION in $pyFile"
           }
 
           $pyVersion = $pyMatch.Groups[1].Value
 
-          # -----------------------------------------------
+          # ------------------------------------------------
           # Inno Setup version
-          # -----------------------------------------------
+          # Actual VibePause.iss contains:
+          #
+          # AppVersion=0.1.3
+          # ------------------------------------------------
 
           $issMatch = [regex]::Match(
             $issContent,
-            '(?im)^\s*#define\s+MyAppVersion\s+["'']([^"'']+)["'']'
+            '(?im)^\s*AppVersion\s*=\s*([^\r\n]+)'
           )
 
           if (!$issMatch.Success) {
-            throw "Could not find MyAppVersion in $issFile"
+            throw "Could not find AppVersion in $issFile"
           }
 
-          $issVersion = $issMatch.Groups[1].Value
+          $issVersion = $issMatch.Groups[1].Value.Trim()
 
           Write-Host ""
-          Write-Host "Python version : $pyVersion"
+          Write-Host "Python version    : $pyVersion"
           Write-Host "Installer version : $issVersion"
           Write-Host ""
 
@@ -310,7 +440,7 @@ jobs:
       - name: Build VibePause
         shell: pwsh
         run: |
-          cd src
+          Set-Location "src"
 
           pyinstaller `
             --clean `
@@ -323,7 +453,9 @@ jobs:
       - name: Install Inno Setup
         shell: pwsh
         run: |
-          choco install innosetup --yes --no-progress
+          choco install innosetup `
+            --yes `
+            --no-progress
 
       # --------------------------------------------------
       # Build installer
@@ -331,8 +463,17 @@ jobs:
       - name: Build installer
         shell: pwsh
         run: |
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
-            "src\installer\VibePause.iss"
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+
+          if (!(Test-Path $iscc)) {
+            throw "Inno Setup compiler was not found at $iscc"
+          }
+
+          & $iscc "src\installer\VibePause.iss"
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup compilation failed with exit code $LASTEXITCODE"
+          }
 
       # --------------------------------------------------
       # Upload build artifacts
@@ -343,4 +484,4 @@ jobs:
           name: VibePause
           path: |
             src\dist\**
-            src\installer\*.exe
+            src\installer_output\*.exe
