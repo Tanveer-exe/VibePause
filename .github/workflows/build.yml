@@ -1,4 +1,4 @@
-name: Build and Release VibePause
+name: Build VibePause
 
 on:
   push:
@@ -6,114 +6,341 @@ on:
       - "v*"
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   build:
     runs-on: windows-latest
 
     steps:
+      # --------------------------------------------------
+      # Checkout repository
+      # --------------------------------------------------
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v7
+      # --------------------------------------------------
+      # Set up Python
+      # --------------------------------------------------
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.11"
 
+      # --------------------------------------------------
+      # Download source archive
+      # --------------------------------------------------
+      - name: Download VibePause source
+        shell: pwsh
+        run: |
+          # Keep your existing download command here if
+          # VibePause_src.zip is downloaded from somewhere.
+          #
+          # If the ZIP is already present in the repository,
+          # this step does nothing.
+
+          if (!(Test-Path "VibePause_src.zip")) {
+            throw "VibePause_src.zip was not found."
+          }
+
+      # --------------------------------------------------
+      # Inspect ZIP layout
+      # --------------------------------------------------
+      - name: Inspect source archive
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+          $zip = [System.IO.Compression.ZipFile]::OpenRead("VibePause_src.zip")
+
+          Write-Host "===== VibePause_src.zip contents ====="
+
+          foreach ($entry in $zip.Entries) {
+            Write-Host $entry.FullName
+          }
+
+          Write-Host "======================================"
+
+          $zip.Dispose()
+
+      # --------------------------------------------------
+      # Unpack source
+      # --------------------------------------------------
       - name: Unpack VibePause source
         shell: pwsh
         run: |
-          Remove-Item -Recurse -Force src -ErrorAction SilentlyContinue
-          Expand-Archive -Path VibePause_src.zip -DestinationPath src -Force
+          Write-Host "Cleaning old source directory..."
 
+          Remove-Item -Recurse -Force "src" -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force ".tmp_vibepause" -ErrorAction SilentlyContinue
+
+          New-Item -ItemType Directory -Path "src" | Out-Null
+
+          Write-Host "Extracting VibePause_src.zip..."
+
+          Expand-Archive `
+            -Path "VibePause_src.zip" `
+            -DestinationPath ".tmp_vibepause" `
+            -Force
+
+          Write-Host "Extracted archive structure:"
+          Get-ChildItem ".tmp_vibepause" -Recurse |
+            Select-Object FullName
+
+          # ------------------------------------------------
+          # Your ZIP contains:
+          #
+          # src/
+          #   VibePause.pyw
+          #
+          # installer/
+          #   VibePause.iss
+          #
+          # assets/
+          #
+          # VibePause.spec
+          # ------------------------------------------------
+
+          Write-Host "Copying application source..."
+
+          if (Test-Path ".tmp_vibepause\src") {
+            Copy-Item `
+              ".tmp_vibepause\src\*" `
+              "src" `
+              -Recurse `
+              -Force
+          }
+          else {
+            throw "The ZIP does not contain a src directory."
+          }
+
+          Write-Host "Copying installer..."
+
+          if (Test-Path ".tmp_vibepause\installer") {
+            New-Item `
+              -ItemType Directory `
+              -Path "src\installer" `
+              -Force | Out-Null
+
+            Copy-Item `
+              ".tmp_vibepause\installer\*" `
+              "src\installer" `
+              -Recurse `
+              -Force
+          }
+          else {
+            throw "The ZIP does not contain an installer directory."
+          }
+
+          Write-Host "Copying assets..."
+
+          if (Test-Path ".tmp_vibepause\assets") {
+            New-Item `
+              -ItemType Directory `
+              -Path "src\assets" `
+              -Force | Out-Null
+
+            Copy-Item `
+              ".tmp_vibepause\assets\*" `
+              "src\assets" `
+              -Recurse `
+              -Force
+          }
+
+          # ------------------------------------------------
+          # Copy root-level files
+          # ------------------------------------------------
+
+          $rootFiles = @(
+            "VibePause.spec",
+            "VibePause.ico",
+            "PRIVACY_POLICY.md",
+            "TERMS_AND_CONDITIONS.md",
+            "THIRD_PARTY_NOTICES.md"
+          )
+
+          foreach ($file in $rootFiles) {
+
+            $source = ".tmp_vibepause\$file"
+
+            if (Test-Path $source) {
+
+              Write-Host "Copying $file..."
+
+              Copy-Item `
+                $source `
+                "src\$file" `
+                -Force
+            }
+          }
+
+          # Cleanup
+          Remove-Item `
+            -Recurse `
+            -Force `
+            ".tmp_vibepause"
+
+          # ------------------------------------------------
+          # Verify final source layout
+          # ------------------------------------------------
+
+          Write-Host ""
+          Write-Host "===== FINAL SOURCE LAYOUT ====="
+
+          Get-ChildItem "src" -Recurse |
+            Select-Object FullName
+
+          Write-Host "================================"
+
+      # --------------------------------------------------
+      # Verify source layout
+      # --------------------------------------------------
+      - name: Verify source layout
+        shell: pwsh
+        run: |
+          $required = @(
+            "src\VibePause.pyw",
+            "src\installer\VibePause.iss",
+            "src\VibePause.spec"
+          )
+
+          foreach ($file in $required) {
+
+            if (!(Test-Path $file)) {
+              Write-Host ""
+              Write-Host "===== DEBUG: SOURCE TREE ====="
+
+              if (Test-Path "src") {
+                Get-ChildItem "src" -Recurse |
+                  Select-Object FullName
+              }
+
+              Write-Host "=============================="
+
+              throw "Required source file is missing: $file"
+            }
+
+            Write-Host "Found: $file"
+          }
+
+          Write-Host ""
+          Write-Host "Source layout verification passed."
+
+      # --------------------------------------------------
+      # Verify version numbers match
+      # --------------------------------------------------
       - name: Verify version numbers match
         shell: pwsh
         run: |
-          $py  = (Select-String -Path "src\VibePause.pyw" -Pattern '^APP_VERSION\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
-          $iss = (Select-String -Path "src\installer\VibePause.iss" -Pattern '^AppVersion=(.+)$').Matches[0].Groups[1].Value.Trim()
-          Write-Host "VibePause.pyw APP_VERSION = $py"
-          Write-Host "VibePause.iss AppVersion  = $iss"
-          if ($py -ne $iss) { throw "Version mismatch: VibePause.pyw says $py but VibePause.iss says $iss" }
-          if ("$env:GITHUB_REF" -like "refs/tags/v*") {
-            $tag = $env:GITHUB_REF_NAME.TrimStart("v")
-            if ($tag -ne $py) { throw "Tag $env:GITHUB_REF_NAME does not match the source version $py. The source ZIP in this commit is not the $tag release." }
+          $pyFile = "src\VibePause.pyw"
+          $issFile = "src\installer\VibePause.iss"
+
+          if (!(Test-Path $pyFile)) {
+            throw "Cannot find path $pyFile"
           }
 
-      - name: Install Python dependencies
+          if (!(Test-Path $issFile)) {
+            throw "Cannot find path $issFile"
+          }
+
+          Write-Host "Reading version from $pyFile..."
+
+          $pyContent = Get-Content $pyFile -Raw
+
+          Write-Host "Reading version from $issFile..."
+
+          $issContent = Get-Content $issFile -Raw
+
+          # -----------------------------------------------
+          # Python version
+          # -----------------------------------------------
+
+          $pyMatch = [regex]::Match(
+            $pyContent,
+            '(?m)^\s*(?:APP_VERSION|VERSION|__version__)\s*=\s*["'']([^"'']+)["'']'
+          )
+
+          if (!$pyMatch.Success) {
+            throw "Could not find application version in $pyFile"
+          }
+
+          $pyVersion = $pyMatch.Groups[1].Value
+
+          # -----------------------------------------------
+          # Inno Setup version
+          # -----------------------------------------------
+
+          $issMatch = [regex]::Match(
+            $issContent,
+            '(?im)^\s*#define\s+MyAppVersion\s+["'']([^"'']+)["'']'
+          )
+
+          if (!$issMatch.Success) {
+            throw "Could not find MyAppVersion in $issFile"
+          }
+
+          $issVersion = $issMatch.Groups[1].Value
+
+          Write-Host ""
+          Write-Host "Python version : $pyVersion"
+          Write-Host "Installer version : $issVersion"
+          Write-Host ""
+
+          if ($pyVersion -ne $issVersion) {
+            throw "Version mismatch! Python=$pyVersion, Installer=$issVersion"
+          }
+
+          Write-Host "Version numbers match: $pyVersion"
+
+      # --------------------------------------------------
+      # Install dependencies
+      # --------------------------------------------------
+      - name: Install dependencies
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          python -m pip install `
-            pyinstaller `
-            pystray `
-            pillow `
-            winrt-runtime `
-            winrt-Windows.Media.Control `
-            winrt-Windows.Foundation `
-            winrt-Windows.Foundation.Collections
 
+          if (Test-Path "src\requirements.txt") {
+            pip install -r "src\requirements.txt"
+          }
+
+          pip install pyinstaller
+
+      # --------------------------------------------------
+      # Build executable
+      # --------------------------------------------------
+      - name: Build VibePause
+        shell: pwsh
+        run: |
+          cd src
+
+          pyinstaller `
+            --clean `
+            --noconfirm `
+            "VibePause.spec"
+
+      # --------------------------------------------------
+      # Install Inno Setup
+      # --------------------------------------------------
       - name: Install Inno Setup
         shell: pwsh
         run: |
-          choco install innosetup -y --no-progress
+          choco install innosetup --yes --no-progress
 
-      - name: Build VibePause EXE
-        working-directory: src
+      # --------------------------------------------------
+      # Build installer
+      # --------------------------------------------------
+      - name: Build installer
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean VibePause.spec
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
+            "src\installer\VibePause.iss"
 
-      - name: Verify EXE
-        shell: pwsh
-        run: |
-          $exe = "src\dist\VibePause\VibePause.exe"
-          if (!(Test-Path $exe)) {
-            Write-Host "VibePause.exe was not created."
-            Get-ChildItem -Recurse "src\dist" -ErrorAction SilentlyContinue
-            throw "EXE missing"
-          }
-          Write-Host "VibePause.exe created successfully."
-
-      - name: Build VibePause Setup.exe
-        working-directory: src
-        shell: pwsh
-        run: |
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
-            "installer\VibePause.iss"
-
-      - name: Verify Setup.exe
-        shell: pwsh
-        run: |
-          $setup = "src\installer_output\VibePause_Setup.exe"
-          if (!(Test-Path $setup)) {
-            Write-Host "VibePause_Setup.exe was not created."
-            Get-ChildItem -Recurse "src\installer_output" -ErrorAction SilentlyContinue
-            throw "Setup.exe missing"
-          }
-          Write-Host "VibePause_Setup.exe created successfully."
-
-      - name: Upload VibePause installer artifact
-        uses: actions/upload-artifact@v7
+      # --------------------------------------------------
+      # Upload build artifacts
+      # --------------------------------------------------
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
         with:
-          name: VibePause_Setup
-          path: src/installer_output/VibePause_Setup.exe
-          if-no-files-found: error
-
-      - name: Create or update GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $tag = $env:GITHUB_REF_NAME
-          $file = "src/installer_output/VibePause_Setup.exe"
-          gh release view $tag *> $null
-          if ($LASTEXITCODE -eq 0) {
-            Write-Host "Release $tag already exists - replacing its installer."
-            gh release upload $tag $file --clobber
-          } else {
-            gh release create $tag $file --title "VibePause $tag - Alpha Release" --prerelease --generate-notes
-          }
-          if ($LASTEXITCODE -ne 0) { throw "Release step failed" }
+          name: VibePause
+          path: |
+            src\dist\**
+            src\installer\*.exe
