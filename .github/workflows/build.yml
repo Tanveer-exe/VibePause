@@ -83,7 +83,7 @@ jobs:
           if (Test-Path "src\requirements.txt") {
             pip install -r "src\requirements.txt"
           }
-          pip install pyinstaller
+          pip install pyinstaller==6.22.3
 
       - name: Build VibePause
         shell: pwsh
