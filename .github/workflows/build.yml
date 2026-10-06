@@ -43,6 +43,7 @@ jobs:
           }
 
           Copy-Item -Path (Join-Path $pyw.Directory.FullName "*") -Destination "src" -Recurse -Force
+          Copy-Item -Path "LICENSE" -Destination "src\LICENSE" -Force
 
           Write-Host "===== src layout ====="
           Get-ChildItem "src" -Recurse | Where-Object { $_.FullName -notmatch '\\assets\\' } | Select-Object FullName
