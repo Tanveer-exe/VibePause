@@ -41,6 +41,7 @@ if os.name == "nt":
 
 # Update checking constants
 UPDATE_CHECK_INTERVAL = 4 * 60 * 60  # 4 hours in seconds
+UPDATE_RETRY_DELAY = 5 * 60  # seconds before retrying a failed background check
 UPDATE_CHECK_TIMEOUT = 12  # seconds for GitHub API request
 
 # Legal acceptance constants
@@ -91,6 +92,21 @@ def read_settings():
     except OSError:
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def write_settings(data):
+    tmp = CONFIG.with_name("settings.json.tmp")
+    try:
+        APPDATA.mkdir(parents=True, exist_ok=True)
+        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        os.replace(tmp, CONFIG)
+        return True
+    except OSError:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        return False
 
 
 class PROCESSENTRY32W(ctypes.Structure):
@@ -290,6 +306,7 @@ class Controller:
         self.round_started_at = 0.0
         self.last_event = None
         self.last_event_time = 0.0
+        self.paused_by_us = False
         self.lock = threading.Lock()
 
     def toggle_media(self):
@@ -306,6 +323,8 @@ class Controller:
                         self.ui.event("system", "No active Windows media session")
                         return False
                     self.music_playing = desired
+                    if desired:
+                        self.paused_by_us = False
                     return True
                 except Exception as e:
                     self.ui.event("system", f"Media session error: {e}")
@@ -346,6 +365,7 @@ class Controller:
             return
         desired = action == "Play"
         if self.set_playing(desired):
+            self.paused_by_us = not desired
             self.ui.event("music", "Playing" if desired else "Paused")
 
     def follow(self, stop_event, start_at_end):
@@ -405,6 +425,8 @@ class Controller:
             self.ui.event("valorant", running)
             if not running:
                 self.reset_match_state()
+                if self.paused_by_us and self.ui.active and self.set_playing(True):
+                    self.ui.event("music", "Playing")
 
     def run(self, stop_event):
         while not stop_event.is_set():
@@ -430,14 +452,15 @@ class Controller:
         self.game_running = valorant_running()
         self.last_process_check = time.monotonic()
         self.ui.event("valorant", self.game_running)
-        self.apply_action("Returned to Lobby", delay=0, stop_event=stop_event)
 
+        partial = ""
         while not stop_event.is_set():
             self.poll_game_process()
-            line = f.readline()
-            if not line:
+            chunk = f.readline()
+            if not chunk:
                 if self.log_replaced(f):
                     f.close()
+                    partial = ""
                     f = self.follow(stop_event, False)
                     if not f:
                         return
@@ -445,7 +468,10 @@ class Controller:
                 stop_event.wait(.08)
                 continue
 
-            line = line.strip()
+            partial += chunk
+            if not partial.endswith("\n") and len(partial) < 65536:
+                continue
+            line, partial = partial.strip(), ""
             low = line.lower()
 
             # --------------------------------------------------------------
@@ -764,7 +790,7 @@ class App:
             if LEGACY_CONFIG.exists() and not CONFIG.exists():
                 try:
                     legacy_data = json.loads(LEGACY_CONFIG.read_text(encoding="utf-8"))
-                    CONFIG.write_text(json.dumps(legacy_data, indent=2), encoding="utf-8")
+                    write_settings(legacy_data)
                 except Exception:
                     pass  # If migration fails, continue with empty settings
 
@@ -798,12 +824,11 @@ class App:
                         pass
                     # Mark that we've checked for legacy startup
                     d["legacy_startup_migrated"] = True
-                    CONFIG.write_text(json.dumps(d, indent=2), encoding="utf-8")
+                    write_settings(d)
         except Exception:
             pass
 
     def save(self):
-        APPDATA.mkdir(parents=True, exist_ok=True)
         # Merge into the existing file instead of replacing it. Keys this method
         # does not own (legal acceptance, migration flags) must survive every
         # save, otherwise the legal popup comes back on each launch.
@@ -816,7 +841,8 @@ class App:
             "auto_update_enabled": self.auto_update_enabled,
         })
         data.pop("selected_media_app", None)
-        CONFIG.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        if not write_settings(data):
+            self.log_line("Could not save settings")
 
     def check_legal_acceptance_on_startup(self):
         if self.check_legal_acceptance():
@@ -1454,11 +1480,17 @@ class App:
                 current_time = time.time()
                 if current_time - self.last_update_check >= UPDATE_CHECK_INTERVAL:
                     self.last_update_check = current_time
-                    update_available, version, url, size, digest = self._silent_check_for_updates()
+                    result = self._silent_check_for_updates()
+                    if result is None:
+                        self.last_update_check = current_time - UPDATE_CHECK_INTERVAL + UPDATE_RETRY_DELAY
+                    elif result[0]:
+                        self._pending_update = result[1:]
 
-                    if (update_available and version != self.declined_update
-                            and not getattr(self, "_update_busy", False)):
-                        self.root.after(0, lambda v=(version, url, size, digest): self._show_update_notification(v))
+                pending = getattr(self, "_pending_update", None)
+                if (pending and pending[0] != self.declined_update and not self.valorant_running
+                        and not getattr(self, "_update_busy", False)):
+                    self._pending_update = None
+                    self.event("update_prompt", pending)
 
                 # Wait interruptibly so shutdown wakes the checker immediately.
                 if self._auto_update_stop.wait(60):
@@ -1469,16 +1501,14 @@ class App:
                     break
 
     def _silent_check_for_updates(self):
-        """Silently check for updates, return (update_available, version, url, size, digest)"""
+        """Silently check for updates. Returns (update_available, version, url, size, digest), or None if the check failed."""
         try:
             result = pick_update(fetch_releases(), APP_VERSION)
             if result[0] == "update":
                 return True, result[1], result[2], result[3], result[4]
-            else:
-                return False, result[1], "", 0, ""
+            return False, result[1], "", 0, ""
         except Exception:
-            # Silently fail for background checks
-            return False, "", "", 0, ""
+            return None
 
     def _show_update_notification(self, version_info):
         """Show update notification when auto-update is enabled"""
@@ -1578,16 +1608,9 @@ class App:
 
     def save_legal_acceptance(self):
         """Save that legal documents have been accepted for current version"""
-        try:
-            APPDATA.mkdir(parents=True, exist_ok=True)
-            # Load existing settings
-            d = read_settings()
-            # Update legal acceptance
-            d[LEGAL_ACCEPTANCE_KEY] = True
-            # Save back
-            CONFIG.write_text(json.dumps(d, indent=2), encoding="utf-8")
-        except Exception as e:
-            print(f"Failed to save legal acceptance: {e}")
+        d = read_settings()
+        d[LEGAL_ACCEPTANCE_KEY] = True
+        write_settings(d)
 
     def show_legal_popup(self):
         """Show terms and conditions and privacy policy popup"""
@@ -1824,6 +1847,8 @@ class App:
             self.run_command(value)
         elif kind == "update":
             self.handle_update_event(value)
+        elif kind == "update_prompt":
+            self._show_update_notification(value)
         elif kind == "event":
             event, action = value
             self.hero.itemconfig(self.hero_event, text=event)

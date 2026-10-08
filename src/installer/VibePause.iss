@@ -51,6 +51,8 @@ end;
 function UninstallOldVersion(): Boolean;
 var
   UninstallString: String;
+  UninstallExe: String;
+  OldDir: String;
   ResultCode: Integer;
 begin
   Result := False;
@@ -58,9 +60,16 @@ begin
 
   if GetUninstallValue('UninstallString', UninstallString) then
   begin
-    // Silent uninstall of the existing version
-    Result := Exec(RemoveQuotes(UninstallString), '/SILENT', '', SW_HIDE,
+    UninstallExe := RemoveQuotes(UninstallString);
+    OldDir := ExtractFileDir(UninstallExe);
+    Result := Exec(UninstallExe, '/VERYSILENT /NORESTART _?=' + OldDir, '', SW_HIDE,
                    ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
+    if Result then
+    begin
+      DeleteFile(UninstallExe);
+      DeleteFile(ChangeFileExt(UninstallExe, '.dat'));
+      RemoveDir(OldDir);
+    end;
   end;
 
   if not Result then
