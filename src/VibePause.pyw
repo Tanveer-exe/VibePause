@@ -78,6 +78,23 @@ CALL_APP_KEYWORDS = (
 VALORANT_PROCESSES = ("valorant-win64-shipping.exe", "valorant.exe")
 
 
+def open_log(path):
+    if os.name != "nt":
+        return open(path, "r", encoding="utf-8", errors="ignore")
+    import msvcrt
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateFileW.restype = ctypes.c_void_p
+    kernel32.CreateFileW.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p,
+                                     ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p]
+    handle = kernel32.CreateFileW(str(path), 0x80000000, 0x7, None, 3, 0x80, None)
+    if handle in (None, 0, ctypes.c_void_p(-1).value):
+        error = ctypes.get_last_error()
+        if error in (2, 3):
+            raise FileNotFoundError(str(path))
+        raise OSError(error, "Could not open the VALORANT log", str(path))
+    return os.fdopen(msvcrt.open_osfhandle(handle, os.O_RDONLY), "r", encoding="utf-8", errors="ignore")
+
+
 def read_settings():
     try:
         if not CONFIG.exists():
@@ -372,8 +389,8 @@ class Controller:
         waited = False
         while not stop_event.is_set():
             try:
-                f = open(LOG, "r", encoding="utf-8", errors="ignore")
-            except FileNotFoundError:
+                f = open_log(LOG)
+            except OSError:
                 if not waited:
                     self.ui.event("system", "Waiting for Valorant...")
                     waited = True
@@ -394,6 +411,11 @@ class Controller:
 
     def stop(self):
         self.stop_event.set()
+
+    def release(self):
+        if self.paused_by_us:
+            return self.set_playing(True)
+        return False
 
     def reset_match_state(self):
         self.in_match = False
@@ -708,9 +730,9 @@ class App:
     def __init__(self, root):
         self.root = root
         self.root.title(APP_NAME)
-        self.WIN_W, self.WIN_H = 1040, 680
+        self.WIN_W, self.WIN_H = 1040, 648
         sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
-        self.root.geometry(f"{self.WIN_W}x{self.WIN_H}+{max(0,(sw-self.WIN_W)//2)}+{max(0,(sh-self.WIN_H)//2-20)}")
+        self.root.geometry(f"{self.WIN_W}x{self.WIN_H}+{max(0,(sw-self.WIN_W)//2)}+{max(0,min((sh-self.WIN_H)//2-20,sh-self.WIN_H-48))}")
         self.root.resizable(False, False)
         self.root.configure(bg=self.BG, bd=0, highlightthickness=0)
         self.root.option_add("*Button.highlightThickness", 0)   # no focus outlines on flat buttons
@@ -1041,10 +1063,10 @@ class App:
         else:
             self.root.geometry(f"+{x}+{y}")
 
-    LEFT_CARD = (28, 82, 328, 648)
-    EVENTS_CARD = (350, 82, 1012, 456)
-    MEDIA_CARD = (350, 472, 672, 648)
-    ACTIVITY_CARD = (690, 472, 1012, 648)
+    LEFT_CARD = (28, 82, 328, 616)
+    EVENTS_CARD = (350, 82, 1012, 432)
+    MEDIA_CARD = (350, 448, 672, 616)
+    ACTIVITY_CARD = (690, 448, 1012, 616)
     RING_CENTER = (178, 214)
     RING_SIZE = 190
     TILE_SIZE = (303, 68)
@@ -1070,10 +1092,10 @@ class App:
         return text + "..."
 
     def tile_origin(self, i):
-        return 372 + (i % 2) * 315, 130 + (i // 2) * 78
+        return 372 + (i % 2) * 315, 130 + (i // 2) * 74
 
     def chip_origin(self, i):
-        return 372 + (i % 2) * 147, 520 + (i // 2) * 46
+        return 372 + (i % 2) * 147, 496 + (i // 2) * 46
 
     def make_clickable(self, tag, command, hover=None):
         cv = self.cv
@@ -1264,7 +1286,7 @@ class App:
             ("b_play", "Play", "play", (47, 227, 198, 52), (80, 240, 215, 115), self.GREEN, 52, self.force_play),
             ("b_pause", "Pause", "pause", (255, 93, 143, 56), (255, 125, 170, 120), self.RED, 182, self.force_pause),
         ):
-            w, h, y0 = 122, 48, 578
+            w, h, y0 = 122, 48, 546
             normal = self.photo(glass_image(w, h, 18, fill=fill, border=border))
             hot = self.photo(glass_image(w, h, 18, fill=fill[:3] + (fill[3] + 36,), border=border))
             bg = cv.create_image(x0, y0, image=normal, anchor="nw", tags=(tag, "nodrag"))
@@ -1321,7 +1343,7 @@ class App:
 
     def build_media_card(self):
         cv = self.cv
-        cv.create_text(374, 498, text="Supported media", fill=self.TEXT, font=self.F(13, True), anchor="w")
+        cv.create_text(374, 474, text="Supported media", fill=self.TEXT, font=self.F(13, True), anchor="w")
         keys = {"Google Chrome": ("chrome", "Chrome"), "YouTube Music": ("youtube_music", "YouTube Music"),
                 "Apple Music": ("apple_music", "Apple Music"), "Spotify": ("spotify", "Spotify")}
         for i, name in enumerate(MEDIA_APPS):
@@ -1331,16 +1353,16 @@ class App:
             if icon:
                 cv.create_image(x + 10, y + 18, image=icon, anchor="w")
             cv.create_text(x + 36, y + 18, text=label, fill=self.TEXT, font=self.F(9), anchor="w")
-        cv.create_text(374, 618, text="Any Windows media app. Call apps are skipped.", fill=self.MUTED,
+        cv.create_text(374, 592, text="Any Windows media app. Call apps are skipped.", fill=self.MUTED,
                        font=self.F(8), anchor="w", width=290)
 
     def build_activity_card(self):
         cv = self.cv
-        cv.create_text(712, 498, text="Live activity", fill=self.TEXT, font=self.F(13, True), anchor="w")
-        clear = cv.create_text(990, 498, text="Clear", fill=self.MUTED, font=self.F(9, True), anchor="e", tags=("clear", "nodrag"))
+        cv.create_text(712, 474, text="Live activity", fill=self.TEXT, font=self.F(13, True), anchor="w")
+        clear = cv.create_text(990, 474, text="Clear", fill=self.MUTED, font=self.F(9, True), anchor="e", tags=("clear", "nodrag"))
         self.make_clickable("clear", self.clear_log, lambda on: cv.itemconfig(clear, fill=self.TEXT if on else self.MUTED))
         self.log_font = self.font_for(9)
-        self.log_items = [cv.create_text(712, 528 + i * 22, text="", anchor="w", font=self.F(9), fill=self.MUTED)
+        self.log_items = [cv.create_text(712, 504 + i * 21, text="", anchor="w", font=self.F(9), fill=self.MUTED)
                           for i in range(self.LOG_ROWS)]
 
     def refresh_log(self):
@@ -1779,8 +1801,13 @@ class App:
     def stop_monitoring(self):
         self.running = False
         self.controller.stop()
+        threading.Thread(target=self.release_music, daemon=True).start()
         self.status_update(False)
         self.log_line("VibePause stopped")
+
+    def release_music(self):
+        if self.controller.release():
+            self.event("music", "Playing")
 
     def status_update(self, active=None):
         if not self.running:
@@ -2104,6 +2131,9 @@ class App:
     def complete_exit(self):
         # Shutdown must be fast and must never wait on network I/O from the UI.
         self.controller.stop()
+        releaser = threading.Thread(target=self.controller.release, daemon=True)
+        releaser.start()
+        releaser.join(2.5)
         self.stop_auto_update_checker()
 
         if self.tray_icon:
