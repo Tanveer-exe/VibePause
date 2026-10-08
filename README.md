@@ -24,6 +24,10 @@
   VibePause runs locally and controls Windows media playback.
 </p>
 
+<p align="center">
+  <img src="docs/screenshot.png" alt="VibePause main window" width="760">
+</p>
+
 ---
 
 ## Install
@@ -78,9 +82,12 @@ VibePause can run quietly in the Windows system tray.
 From the tray menu you can:
 
 - Open VibePause
-- Start VibePause
-- Stop VibePause
+- Turn VibePause on or off with the Active switch
 - Exit VibePause
+
+<p align="center">
+  <img src="docs/tray.png" alt="VibePause tray menu" width="252">
+</p>
 
 You can also choose whether closing the window sends VibePause to the tray or exits the application.
 
