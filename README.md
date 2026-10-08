@@ -17,7 +17,7 @@
   <a href="https://github.com/Tanveer-exe/VibePause/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/Tanveer-exe/VibePause/total?label=DOWNLOADS&labelColor=555555&color=3ddbc4&style=flat-square"></a>
   <img alt="Platform" src="https://img.shields.io/badge/PLATFORM-WINDOWS-0f1923?labelColor=555555&style=flat-square">
   <img alt="Python" src="https://img.shields.io/badge/PYTHON-3.11-3776ab?labelColor=555555&style=flat-square">
-  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/LICENSE-MIT-0f6fff?labelColor=555555&style=flat-square"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/LICENSE-GPL--3.0-0f6fff?labelColor=555555&style=flat-square"></a>
   <img alt="Made with Claude" src="https://img.shields.io/badge/MADE_WITH-CLAUDE-8b5cf6?labelColor=555555&style=flat-square">
 </p>
 
@@ -225,9 +225,11 @@ VibePause does not claim ownership of any third-party names, logos, or applicati
 
 ## License
 
-VibePause is released under the **[MIT License](LICENSE)**.
+Copyright (C) 2026 tanveer-exe
 
-You can use, copy, modify, and distribute the software, including in your own projects, as long as you retain the copyright notice.
+VibePause is released under the **[GNU General Public License v3.0](LICENSE)**.
+
+You can use, copy, modify, and share the software. If you share a modified version, you must also share its source code under the same license.
 
 The names and logos of VALORANT, Riot Games, and third-party applications are not covered by this license.
 
