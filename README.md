@@ -17,6 +17,7 @@
   <img alt="Python" src="https://img.shields.io/badge/PYTHON-3.11-3776ab?labelColor=555555&style=flat-square">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/LICENSE-GPL--3.0-0f6fff?labelColor=555555&style=flat-square"></a>
   <img alt="Made with Claude" src="https://img.shields.io/badge/MADE_WITH-CLAUDE-8b5cf6?labelColor=555555&style=flat-square">
+  <a href="https://ko-fi.com/tanveerexe"><img alt="Support on Ko-fi" src="https://img.shields.io/badge/KO--FI-SUPPORT-ff5e5b?labelColor=555555&style=flat-square"></a>
   <a href="https://tanveer-exe.github.io/VibePause/"><img alt="Website" src="https://img.shields.io/badge/WEBSITE-VISIT-ff5d8f?labelColor=555555&style=flat-square"></a>
 </p>
 
