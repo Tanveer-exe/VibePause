@@ -6,6 +6,8 @@
 
 <p align="center"><b>Your game. Your music. Automatically synced.</b></p>
 
+<p align="center"><a href="https://tanveer-exe.github.io/VibePause/">Website</a></p>
+
 <p align="center">
   A lightweight Windows companion for <b>VALORANT</b> that automatically controls your music based on what is happening in the match.
 </p>
