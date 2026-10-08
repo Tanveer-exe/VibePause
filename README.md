@@ -6,8 +6,6 @@
 
 <p align="center"><b>Your game. Your music. Automatically synced.</b></p>
 
-<p align="center"><a href="https://tanveer-exe.github.io/VibePause/">Website</a></p>
-
 <p align="center">
   A lightweight Windows companion for <b>VALORANT</b> that automatically controls your music based on what is happening in the match.
 </p>
@@ -19,6 +17,7 @@
   <img alt="Python" src="https://img.shields.io/badge/PYTHON-3.11-3776ab?labelColor=555555&style=flat-square">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/LICENSE-GPL--3.0-0f6fff?labelColor=555555&style=flat-square"></a>
   <img alt="Made with Claude" src="https://img.shields.io/badge/MADE_WITH-CLAUDE-8b5cf6?labelColor=555555&style=flat-square">
+  <a href="https://tanveer-exe.github.io/VibePause/"><img alt="Website" src="https://img.shields.io/badge/WEBSITE-VISIT-ff5d8f?labelColor=555555&style=flat-square"></a>
 </p>
 
 <p align="center">
