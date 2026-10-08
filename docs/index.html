@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VibePause: your music follows the round</title>
+<meta name="description" content="VibePause pauses your music when a VALORANT round starts and plays it again when you die, buy, or return to the lobby. Free and open source for Windows.">
+<meta name="theme-color" content="#0a0a1c">
+<meta property="og:title" content="VibePause: your music follows the round">
+<meta property="og:description" content="Your game. Your music. Automatically synced. Free and open source for Windows.">
+<meta property="og:image" content="https://tanveer-exe.github.io/VibePause/banner.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0a1c;
+  --panel:rgba(255,255,255,.065);
+  --panel-strong:rgba(255,255,255,.11);
+  --edge:rgba(255,255,255,.16);
+  --text:#f1efff;
+  --muted:#a8a6cf;
+  --violet:#6842e8;
+  --pink:#ff5d8f;
+  --teal:#2fe3c6;
+  --display:"Bricolage Grotesque","Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
+  --body:"Figtree","Segoe UI",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;color:var(--text);font:400 1.0625rem/1.65 var(--body);
+  background:
+    radial-gradient(60rem 42rem at 6% -8%,rgba(104,66,232,.62),transparent 70%),
+    radial-gradient(40rem 30rem at 62% -12%,rgba(214,56,124,.30),transparent 70%),
+    radial-gradient(54rem 40rem at 104% 104%,rgba(18,196,172,.52),transparent 70%),
+    radial-gradient(34rem 26rem at -4% 100%,rgba(58,92,224,.28),transparent 70%),
+    var(--ink);
+  background-attachment:fixed;
+  min-height:100vh;
+}
+a{color:inherit}
+:focus-visible{outline:2px solid var(--teal);outline-offset:3px;border-radius:6px}
+.wrap{width:min(1120px,100% - 40px);margin-inline:auto}
+h1,h2,h3{font-family:var(--display);line-height:1.08;margin:0;letter-spacing:-.02em}
+h1{font-size:clamp(2.6rem,6.4vw,4.9rem);font-weight:800}
+h2{font-size:clamp(1.8rem,3.6vw,2.6rem);font-weight:700}
+h3{font-size:1.2rem;font-weight:700;letter-spacing:-.01em}
+p{margin:0}
+.lede{color:var(--muted);font-size:1.18rem;max-width:34rem}
+.glass{
+  background:linear-gradient(180deg,rgba(255,255,255,.10),var(--panel));
+  border:1px solid var(--edge);
+  border-radius:24px;
+}
+
+nav{display:flex;align-items:center;justify-content:space-between;padding:22px 0}
+.brand{display:flex;align-items:center;gap:12px;font:800 1.25rem var(--display);text-decoration:none;letter-spacing:-.01em}
+.brand img{width:34px;height:34px;border-radius:9px}
+.navlinks{display:flex;gap:6px}
+.navlinks a{padding:9px 16px;border-radius:999px;text-decoration:none;color:var(--muted);font-weight:500}
+.navlinks a:hover{color:var(--text);background:var(--panel)}
+
+.btn{
+  display:inline-flex;align-items:center;gap:10px;padding:14px 26px;border-radius:999px;
+  font:600 1.02rem var(--body);text-decoration:none;border:1px solid var(--edge);
+  background:var(--panel);transition:background .15s,transform .15s;
+}
+.btn:hover{background:var(--panel-strong)}
+.btn:active{transform:translateY(1px)}
+.btn.primary{
+  background:linear-gradient(135deg,var(--pink),#d83b7a);border-color:rgba(255,255,255,.28);color:#fff;
+  box-shadow:0 10px 34px -10px rgba(255,93,143,.75);
+}
+.btn.primary:hover{background:linear-gradient(135deg,#ff74a0,#e5488a)}
+
+.hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.12fr);gap:56px;align-items:center;padding:56px 0 90px}
+.hero .lede{margin-top:22px}
+.actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:34px}
+.fine{margin-top:18px;font-size:.92rem;color:var(--muted);max-width:30rem}
+.shot{padding:10px;border-radius:30px;box-shadow:0 40px 90px -30px rgba(0,0,0,.8),0 0 120px -20px rgba(104,66,232,.5)}
+.shot img{display:block;width:100%;height:auto;border-radius:22px}
+
+section{padding:70px 0}
+.head{max-width:40rem;margin-bottom:40px}
+.head p{color:var(--muted);margin-top:14px}
+
+.try{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:22px}
+.events{padding:14px;display:grid;gap:6px;align-content:start}
+.events button{
+  all:unset;box-sizing:border-box;cursor:pointer;display:flex;justify-content:space-between;align-items:center;
+  padding:14px 16px;border-radius:14px;font-weight:600;color:var(--text);
+}
+.events button:hover{background:var(--panel-strong)}
+.events button[aria-pressed="true"]{background:var(--panel-strong);box-shadow:inset 0 0 0 1px var(--edge)}
+.events button:focus-visible{outline:2px solid var(--teal)}
+.chip{font:600 .82rem var(--body);padding:4px 12px;border-radius:999px}
+.chip.Play{background:rgba(47,227,198,.16);color:var(--teal)}
+.chip.Pause{background:rgba(255,93,143,.18);color:var(--pink)}
+.stage{padding:34px;display:flex;flex-direction:column;justify-content:center;gap:26px;min-height:360px}
+.stage .event{font:700 1.9rem/1.1 var(--display);letter-spacing:-.02em}
+.stage .what{color:var(--muted);max-width:30rem;min-height:3.3em}
+.bars{display:flex;align-items:center;gap:7px;height:76px}
+.bars i{display:block;width:8px;height:10px;border-radius:8px;background:linear-gradient(180deg,var(--teal),var(--violet) 55%,var(--pink));transition:height .35s}
+.bars.on i{animation:beat 1.1s ease-in-out infinite}
+.bars.on i:nth-child(2n){animation-duration:.8s}
+.bars.on i:nth-child(3n){animation-duration:1.4s}
+.bars.on i:nth-child(4n){animation-delay:-.4s}
+@keyframes beat{0%,100%{height:12px}50%{height:70px}}
+.state{font:600 1.05rem var(--body)}
+.state.Play{color:var(--teal)}
+.state.Pause{color:#ffb3c8}
+
+.flow{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;counter-reset:s}
+.step{padding:28px;position:relative}
+.step::before{
+  counter-increment:s;content:counter(s);display:grid;place-items:center;width:38px;height:38px;border-radius:50%;
+  font:800 1rem var(--display);background:linear-gradient(135deg,var(--violet),var(--pink));margin-bottom:18px;
+}
+.step p{color:var(--muted);margin-top:10px}
+code{font:500 .92em ui-monospace,Consolas,monospace;background:rgba(255,255,255,.08);padding:2px 7px;border-radius:7px}
+
+.split{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:48px;align-items:center}
+.never{list-style:none;padding:0;margin:26px 0 0;display:grid;grid-template-columns:1fr 1fr;gap:10px 28px;color:var(--muted)}
+.never li{padding-left:26px;position:relative}
+.never li::before{content:"";position:absolute;left:0;top:.62em;width:12px;height:2px;background:var(--pink);border-radius:2px}
+.tray{padding:12px;border-radius:26px;transform:rotate(2deg);box-shadow:0 30px 70px -25px rgba(0,0,0,.8)}
+.tray img{display:block;border-radius:18px;width:252px;height:auto}
+
+.os{padding:34px}
+.langbar{display:flex;height:11px;border-radius:99px;overflow:hidden;background:rgba(255,255,255,.1);margin:22px 0 16px}
+.langbar span{display:block;min-width:3px}
+.legend{display:flex;flex-wrap:wrap;gap:8px 26px;color:var(--muted);font-size:.98rem}
+.legend b{color:var(--text);font-weight:600}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:8px;vertical-align:-1px}
+.os .actions{margin-top:28px}
+
+footer{padding:50px 0 70px;color:var(--muted);font-size:.95rem}
+footer .row{display:flex;flex-wrap:wrap;justify-content:space-between;gap:18px}
+footer p+p{margin-top:8px;max-width:44rem}
+footer a{text-underline-offset:3px}
+
+@media (max-width:900px){
+  .hero,.try,.split{grid-template-columns:1fr}
+  .flow{grid-template-columns:1fr}
+  .tray{justify-self:start;transform:none}
+  .hero{padding-top:30px}
+}
+@media (max-width:560px){
+  .navlinks a:not(:last-child){display:none}
+  .never{grid-template-columns:1fr}
+  .stage{padding:24px}
+}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  .bars.on i{animation:none;height:40px}
+  .bars i,.btn{transition:none}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <a class="brand" href="#top"><img src="logo.png" alt="">VibePause</a>
+    <div class="navlinks">
+      <a href="#try">Try it</a>
+      <a href="#how">How it works</a>
+      <a href="https://github.com/Tanveer-exe/VibePause">GitHub</a>
+    </div>
+  </nav>
+
+  <header class="hero" id="top">
+    <div>
+      <h1>Your music follows the round.</h1>
+      <p class="lede">VibePause pauses your music when a VALORANT round starts, then plays it again when you die, buy, or head back to the lobby. It runs quietly in your tray.</p>
+      <div class="actions">
+        <a class="btn primary" id="download" href="https://github.com/Tanveer-exe/VibePause/releases/latest/download/VibePause_Setup.exe">Download for Windows</a>
+        <a class="btn" href="https://github.com/Tanveer-exe/VibePause">View source</a>
+      </div>
+      <p class="fine">Free, no account, no admin rights. The installer is not code-signed yet, so Windows may show a SmartScreen warning. Choose More info, then Run anyway.</p>
+    </div>
+    <div class="shot glass"><img src="screenshot.png" width="1040" height="680" alt="The VibePause window showing the current game state, eight music actions and live activity"></div>
+  </header>
+
+  <section id="try">
+    <div class="head">
+      <h2>Pick an event, see what happens.</h2>
+      <p>These are the default actions. In the app you can set every event to Play, Pause, or None.</p>
+    </div>
+    <div class="try">
+      <div class="events glass" id="events" role="group" aria-label="VALORANT events"></div>
+      <div class="stage glass" aria-live="polite">
+        <div class="event" id="evName">Combat Start</div>
+        <p class="what" id="evWhat"></p>
+        <div class="bars" id="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="state" id="evState"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how">
+    <div class="head">
+      <h2>How it works</h2>
+      <p>No overlay, no hooks into the game. VibePause only reads a file and presses play or pause for you.</p>
+    </div>
+    <div class="flow">
+      <div class="step glass"><h3>It reads the game log</h3><p>VALORANT writes <code>ShooterGame.log</code> on your own PC. VibePause follows that file to spot round starts, deaths, and match changes.</p></div>
+      <div class="step glass"><h3>It matches the event</h3><p>Each event has the action you chose: Play, Pause, or None. A delay setting lets you shift when it fires.</p></div>
+      <div class="step glass"><h3>It controls your media</h3><p>It uses Windows media controls, so Spotify, YouTube Music, Apple Music and browser players all work. Call apps like Discord are left alone.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="split">
+      <div>
+        <h2>It stays out of your game.</h2>
+        <p class="lede" style="margin-top:14px">VibePause is a separate app that talks to Windows, not to VALORANT.</p>
+        <ul class="never">
+          <li>No injecting into VALORANT</li>
+          <li>No reading game memory</li>
+          <li>No changing game files</li>
+          <li>No gameplay input</li>
+          <li>No in-game overlay</li>
+          <li>No Riot account details</li>
+        </ul>
+      </div>
+      <div class="tray glass"><img src="tray.png" width="252" height="200" alt="The VibePause tray menu with an Active switch"></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="os glass">
+      <h2>Open source, MIT licensed.</h2>
+      <p class="lede" style="margin-top:12px">Read the code, build it yourself, or send a fix.</p>
+      <div class="langbar" id="langbar" role="img" aria-label="Languages used in the repository"></div>
+      <div class="legend" id="legend"></div>
+      <div class="actions">
+        <a class="btn primary" href="https://github.com/Tanveer-exe/VibePause">View on GitHub</a>
+        <a class="btn" href="https://github.com/Tanveer-exe/VibePause/issues">Report a bug</a>
+        <a class="btn" href="https://github.com/Tanveer-exe/VibePause#build-from-source">Build from source</a>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="row">
+      <p>Made by tanveer-exe together with Claude.</p>
+      <p><a href="https://github.com/Tanveer-exe/VibePause/releases">Releases</a> &nbsp; <a href="https://github.com/Tanveer-exe/VibePause/blob/main/LICENSE">License</a> &nbsp; <a href="https://github.com/Tanveer-exe/VibePause/blob/main/src/PRIVACY_POLICY.md">Privacy</a> &nbsp; <a href="https://github.com/Tanveer-exe/VibePause/blob/main/src/TERMS_AND_CONDITIONS.md">Terms</a></p>
+    </div>
+    <p>VibePause is an independent community project. It is not affiliated with, endorsed by, or sponsored by Riot Games. VALORANT and Riot Games are trademarks of Riot Games, Inc.</p>
+  </footer>
+</div>
+
+<script>
+const EVENTS=[
+  ["Combat Start","Pause","The round goes live. Music pauses so you can hear footsteps and callouts."],
+  ["Player Eliminated","Play","You died. Music comes back while you wait for the round to end."],
+  ["Match Started","Play","The match is loading in. Music plays."],
+  ["Buy Phase Started","Play","The buy phase opens. Music plays while you pick your loadout."],
+  ["Match Ended","Play","The match is over. Music plays."],
+  ["Returned to Lobby","Play","You are back at the main menu. Music plays."],
+  ["Agent Selection","Play","Agent select opens. Music plays while you lock in."],
+  ["Ultimate Used","Play","You were revived by an ultimate. Music plays."]
+];
+const list=document.getElementById("events"),bars=document.getElementById("bars");
+EVENTS.forEach(([name,action],i)=>{
+  const b=document.createElement("button");
+  b.type="button";b.setAttribute("aria-pressed",i===0);
+  b.innerHTML=name+'<span class="chip '+action+'">'+action+'</span>';
+  b.addEventListener("click",()=>pick(i));
+  list.appendChild(b);
+});
+function pick(i){
+  const [name,action,what]=EVENTS[i];
+  [...list.children].forEach((c,j)=>c.setAttribute("aria-pressed",j===i));
+  document.getElementById("evName").textContent=name;
+  document.getElementById("evWhat").textContent=what;
+  const s=document.getElementById("evState");
+  s.className="state "+action;
+  s.textContent=action==="Play"?"Music is playing":"Music is paused";
+  bars.classList.toggle("on",action==="Play");
+}
+pick(0);
+
+const COLORS={"Python":"#3572A5","Inno Setup":"#264b99","PowerShell":"#012456","Shell":"#89e051","Batchfile":"#C1F12E","HTML":"#e34c26","CSS":"#663399","JavaScript":"#f1e05a"};
+function drawLangs(data){
+  const total=Object.values(data).reduce((a,b)=>a+b,0);
+  const bar=document.getElementById("langbar"),legend=document.getElementById("legend");
+  bar.innerHTML="";legend.innerHTML="";
+  Object.entries(data).sort((a,b)=>b[1]-a[1]).forEach(([name,n])=>{
+    const pct=n/total*100,color=COLORS[name]||"#8b8aa8";
+    const seg=document.createElement("span");
+    seg.style.cssText="width:"+pct+"%;background:"+color;
+    seg.title=name+" "+pct.toFixed(1)+"%";
+    bar.appendChild(seg);
+    const item=document.createElement("span");
+    item.innerHTML='<i style="background:'+color+'"></i><b>'+name+'</b> '+pct.toFixed(1)+'%';
+    legend.appendChild(item);
+  });
+}
+drawLangs({"Python":99510,"Inno Setup":5074});
+fetch("https://api.github.com/repos/Tanveer-exe/VibePause/languages")
+  .then(r=>r.ok?r.json():Promise.reject()).then(d=>{if(Object.keys(d).length)drawLangs(d)}).catch(()=>{});
+fetch("https://api.github.com/repos/Tanveer-exe/VibePause/releases/latest")
+  .then(r=>r.ok?r.json():Promise.reject()).then(d=>{
+    if(d.tag_name)document.getElementById("download").textContent="Download "+d.tag_name+" for Windows";
+  }).catch(()=>{});
+</script>
+</body>
+</html>
