@@ -19,38 +19,12 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Unpack VibePause source
+      - name: Prepare source
         shell: pwsh
         run: |
-          if (!(Test-Path "VibePause_src.zip")) {
-            throw "VibePause_src.zip was not found in the repository root."
-          }
-
-          $temp = Join-Path $env:RUNNER_TEMP "vibepause_extract"
-          Remove-Item $temp, "src" -Recurse -Force -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Path $temp, "src" -Force | Out-Null
-
-          Expand-Archive -Path "VibePause_src.zip" -DestinationPath $temp -Force
-
-          # Source root = the folder that contains VibePause.pyw
-          # (tolerates an extra top-level folder in the zip).
-          $pyw = Get-ChildItem -Path $temp -Filter "VibePause.pyw" -File -Recurse |
-            Select-Object -First 1
-
-          if ($null -eq $pyw) {
-            Get-ChildItem $temp -Recurse | Select-Object FullName
-            throw "VibePause.pyw was not found in VibePause_src.zip"
-          }
-
-          Copy-Item -Path (Join-Path $pyw.Directory.FullName "*") -Destination "src" -Recurse -Force
           Copy-Item -Path "LICENSE" -Destination "src\LICENSE" -Force
-
-          Write-Host "===== src layout ====="
-          Get-ChildItem "src" -Recurse | Where-Object { $_.FullName -notmatch '\\assets\\' } | Select-Object FullName
-          Write-Host "======================"
-
           foreach ($f in "src\VibePause.pyw", "src\VibePause.spec", "src\installer\VibePause.iss") {
-            if (!(Test-Path $f)) { throw "Required file missing after unpack: $f" }
+            if (!(Test-Path $f)) { throw "Required file missing: $f" }
             Write-Host "Found: $f"
           }
 

@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+src/build/
+src/dist/
+src/installer_output/
+src/LICENSE

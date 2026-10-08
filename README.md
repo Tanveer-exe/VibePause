@@ -196,6 +196,15 @@ The project was tested and refined on a real Windows PC.
 
 VibePause is an open-source project. You are welcome to read the code, fork the project, report bugs, suggest improvements, or contribute changes.
 
+The code lives in the [`src`](src) folder.
+
+### Build from source
+
+1. Install Python 3.11 on Windows.
+2. In the `src` folder, run `pip install -r requirements.txt pyinstaller==6.22.3`.
+3. Run `python VibePause.pyw` to start the app, or `pyinstaller --clean --noconfirm VibePause.spec` to build it.
+4. To build the installer, compile `src/installer/VibePause.iss` with Inno Setup 6 after copying `LICENSE` into `src`.
+
 If you find a problem, please open an issue on GitHub.
 
 ---
