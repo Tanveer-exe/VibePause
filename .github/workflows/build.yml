@@ -6,6 +6,9 @@ on:
       - "v*"
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -49,6 +52,14 @@ jobs:
             throw "Version mismatch! Python=$pyVersion, Installer=$issVersion"
           }
           Write-Host "Version numbers match: $pyVersion"
+
+          if ($env:GITHUB_REF_TYPE -eq "tag") {
+            $tagVersion = $env:GITHUB_REF_NAME.TrimStart("v", "V")
+            if ($tagVersion -ne $pyVersion) {
+              throw "Tag $env:GITHUB_REF_NAME does not match APP_VERSION $pyVersion"
+            }
+            Write-Host "Tag matches version: $tagVersion"
+          }
 
       - name: Install dependencies
         shell: pwsh
@@ -99,3 +110,18 @@ jobs:
           name: VibePause-portable
           path: src/dist/VibePause
           if-no-files-found: error
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $extra = @("--generate-notes")
+          if ($env:GITHUB_REF_NAME.Contains("-")) { $extra += "--prerelease" }
+          if (gh release view $env:GITHUB_REF_NAME 2>$null) {
+            gh release upload $env:GITHUB_REF_NAME "src/installer_output/VibePause_Setup.exe" --clobber
+          } else {
+            gh release create $env:GITHUB_REF_NAME "src/installer_output/VibePause_Setup.exe" @extra
+          }
+          if ($LASTEXITCODE -ne 0) { throw "Publishing the release failed ($LASTEXITCODE)" }
