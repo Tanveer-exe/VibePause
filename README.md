@@ -42,6 +42,10 @@ VibePause installs for your user account, so administrator rights are not requir
 
 > **Windows SmartScreen:** The installer is currently not code-signed, so Windows may display "Windows protected your PC". Click **More info**, then **Run anyway** if you trust the application.
 
+**Checking your download:** each release also includes `VibePause_Setup.exe.sha256`. In PowerShell, `Get-FileHash VibePause_Setup.exe` should show the same value.
+
+See [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md) for the status of code signing.
+
 After installation, launch VibePause, start your preferred Windows media app, and launch VALORANT.
 
 ---
@@ -107,6 +111,8 @@ VibePause provides settings for:
 - Close button behavior
 - Start with Windows
 - Automatic update checks
+- An optional hotkey to turn VibePause on or off (none by default, and you can clear it at any time)
+- Open log folder and Copy diagnostics buttons, to make bug reports easier
 
 Settings are saved locally.
 
@@ -114,7 +120,7 @@ Settings are saved locally.
 
 Open **Settings** and select **Check for updates**.
 
-If a newer version is available, VibePause will ask for confirmation before downloading and installing it.
+If a newer version is available, VibePause shows what's new and asks for confirmation before downloading and installing it.
 
 If you are already running the latest version, VibePause will let you know.
 
@@ -211,7 +217,7 @@ The code lives in the [`src`](src) folder.
 3. Run `python VibePause.pyw` to start the app, or `pyinstaller --clean --noconfirm VibePause.spec` to build it.
 4. To build the installer, compile `src/installer/VibePause.iss` with Inno Setup 6 after copying `LICENSE` into `src`.
 
-If you find a problem, please open an issue on GitHub.
+If you find a problem, please [open an issue](https://github.com/Tanveer-exe/VibePause/issues/new/choose). In VibePause, **Settings > Copy diagnostics** copies the details the form asks for.
 
 ---
 
