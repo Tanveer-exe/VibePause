@@ -956,6 +956,8 @@ HOTKEY_NAMED_KEYS = {"Space": 0x20, "Insert": 0x2D, "Delete": 0x2E, "Home": 0x24
                      "PageUp": 0x21, "PageDown": 0x22, "Left": 0x25, "Up": 0x26, "Right": 0x27, "Down": 0x28}
 TK_KEY_NAMES = {"space": "Space", "Insert": "Insert", "Delete": "Delete", "Home": "Home", "End": "End",
                 "Prior": "PageUp", "Next": "PageDown", "Left": "Left", "Up": "Up", "Right": "Right", "Down": "Down"}
+TK_SHIFT_DIGITS = {"exclam": "1", "at": "2", "numbersign": "3", "dollar": "4", "percent": "5",
+                   "asciicircum": "6", "ampersand": "7", "asterisk": "8", "parenleft": "9", "parenright": "0"}
 TK_MODIFIER_KEYSYMS = {"Shift_L", "Shift_R", "Control_L", "Control_R", "Alt_L", "Alt_R", "Caps_Lock",
                        "Num_Lock", "Win_L", "Win_R", "Super_L", "Super_R", "Meta_L", "Meta_R", "ISO_Level3_Shift"}
 
@@ -991,6 +993,8 @@ def hotkey_from_event(state, keysym):
         key = keysym.upper()
     elif keysym in TK_KEY_NAMES:
         key = TK_KEY_NAMES[keysym]
+    elif keysym in TK_SHIFT_DIGITS and state & 0x1:
+        key = TK_SHIFT_DIGITS[keysym]
     elif re.fullmatch(r"F\d{1,2}", keysym) and hotkey_vk(keysym):
         key = keysym
     else:
