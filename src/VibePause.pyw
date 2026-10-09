@@ -127,16 +127,37 @@ def write_settings(data):
         return False
 
 
-def write_error_log(text):
+ERROR_LOG_COOLDOWN = 6 * 60 * 60  # an identical error is written at most once per 6 hours
+_error_log_seen = {}              # error text -> [time last written, repeats suppressed since]
+_error_log_lock = threading.Lock()
+
+
+def write_error_log(text, cooldown=ERROR_LOG_COOLDOWN):
+    """Append to error.log. Identical errors inside the cooldown window are suppressed so a
+    persistent failure (e.g. a 404 on the update check) cannot spam the file.
+    Returns True if the entry was written, False if it was suppressed as a repeat."""
+    now = time.time()
+    note = ""
+    with _error_log_lock:
+        entry = _error_log_seen.get(text)
+        if entry and now - entry[0] < cooldown:
+            entry[1] += 1
+            return False
+        if entry and entry[1]:
+            note = f"(the same error occurred {entry[1]} more time(s) since the last entry)\n"
+        if len(_error_log_seen) > 200:
+            _error_log_seen.clear()
+        _error_log_seen[text] = [now, 0]
     try:
         APPDATA.mkdir(parents=True, exist_ok=True)
         path = APPDATA / "error.log"
         if path.exists() and path.stat().st_size > 200000:
             path.unlink()
         with open(path, "a", encoding="utf-8") as fh:
-            fh.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {APP_VERSION}\n{text}\n\n")
+            fh.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {APP_VERSION}\n{note}{text}\n\n")
     except OSError:
         pass
+    return True
 
 
 class PROCESSENTRY32W(ctypes.Structure):
@@ -505,15 +526,21 @@ class Controller:
 
     def run(self, stop_event):
         resume = False
+        failures = 0
         while not stop_event.is_set():
             holder = []
+            started = time.monotonic()
             try:
                 self.monitor(stop_event, holder, resume)
             except Exception as e:
                 resume = True
                 close_quietly(holder)
-                self.ui.event("system", f"Monitor error, restarting: {type(e).__name__}: {e}")
-                if stop_event.wait(2):
+                # A run that stayed healthy for a while resets the backoff; a crash loop does not.
+                failures = 1 if time.monotonic() - started > 60 else failures + 1
+                msg = f"Monitor error, restarting: {type(e).__name__}: {e}"
+                self.ui.event("system", msg)      # Live activity throttles repeats of this
+                write_error_log(msg)              # error.log dedupes repeats
+                if stop_event.wait(min(60, 2 * 2 ** min(failures - 1, 5))):
                     return
                 continue
             close_quietly(holder)
@@ -932,7 +959,8 @@ class App:
 
     def report_error(self, exc, val, tb):
         import traceback
-        write_error_log("".join(traceback.format_exception(exc, val, tb)))
+        if not write_error_log("".join(traceback.format_exception(exc, val, tb))):
+            return  # same error already reported recently
         try:
             self.log_line("Something went wrong. Details are in error.log")
         except Exception:
@@ -1152,9 +1180,13 @@ class App:
             if self._hicon_small:
                 user32.SendMessageW(hwnd, WM_SETICON, 0, self._hicon_small)
 
-            SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_NOACTIVATE, SWP_FRAMECHANGED = 0x2, 0x1, 0x4, 0x10, 0x20
-            user32.SetWindowPos(hwnd, None, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED)
-            round_window(hwnd, self.sx(self.WIN_W), self.sx(self.WIN_H), self.sx(12))
+            SWP_NOMOVE, SWP_NOZORDER, SWP_NOACTIVATE, SWP_FRAMECHANGED = 0x2, 0x4, 0x10, 0x20
+            # Tk sized the window while it still had a title bar and borders. With the frame
+            # stripped that outer size is now all client area, which showed up as an empty strip
+            # along the bottom and right. Resize to exactly the content size.
+            pw, ph = self.sx(self.WIN_W), self.sx(self.WIN_H)
+            user32.SetWindowPos(hwnd, None, 0, 0, pw, ph, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED)
+            round_window(hwnd, pw, ph, self.sx(12))
             # Windows can refresh the non-client icon when the frame changes.
             if self._hicon_big:
                 user32.SendMessageW(hwnd, WM_SETICON, 1, self._hicon_big)
@@ -1737,9 +1769,15 @@ class App:
                     self.last_update_check = current_time
                     result = self._silent_check_for_updates()
                     if result is None:
-                        self.last_update_check = current_time - UPDATE_CHECK_INTERVAL + UPDATE_RETRY_DELAY
-                    elif result[0]:
-                        self._pending_update = result[1:]
+                        # Back off 5m, 10m, 20m ... up to the normal 4h interval instead of
+                        # hammering GitHub (and the log) every few minutes.
+                        self._update_failures = getattr(self, "_update_failures", 0) + 1
+                        delay = min(UPDATE_CHECK_INTERVAL, UPDATE_RETRY_DELAY * 2 ** min(self._update_failures - 1, 10))
+                        self.last_update_check = current_time - UPDATE_CHECK_INTERVAL + delay
+                    else:
+                        self._update_failures = 0
+                        if result[0]:
+                            self._pending_update = result[1:]
 
                 if stop.is_set():
                     break
@@ -2188,7 +2226,11 @@ class App:
             self.valorant_running = bool(value)
             self.status_update()
         else:
-            self.log_line(f"{now}  {value}")
+            text = f"{now}  {value}"
+            if str(value).startswith("Manual:"):
+                self.log_line(text)          # user-triggered: always show
+            else:
+                self.log_line_throttled(text)
 
     def process(self):
         try:
@@ -2200,22 +2242,52 @@ class App:
                 try:
                     self.handle_queue_item(kind, value)
                 except Exception as e:
+                    msg = f"Internal error ({kind}): {type(e).__name__}: {e}"
+                    write_error_log(msg)
                     try:
-                        self.log_line(f"Internal error ({kind}): {type(e).__name__}: {e}")
+                        self.log_line(msg)
                     except Exception:
                         pass
         finally:
             self.root.after(80, self.process)
 
+    _LOG_TS = re.compile(r"^\d{2}:\d{2}:\d{2}\s+")
+
     def log_line(self, text):
         if not self.log_items:
             return
-        self.log_lines.append(text)
-        del self.log_lines[:-200]
+        # Collapse back-to-back identical lines (ignoring the timestamp) into one line with a
+        # counter, so a repeating failure shows as "... (x5)" instead of filling Live activity.
+        key = self._LOG_TS.sub("", text)
+        if self.log_lines and key == getattr(self, "_last_log_key", None):
+            self._last_log_count = getattr(self, "_last_log_count", 1) + 1
+            self.log_lines[-1] = f"{text} (x{self._last_log_count})"
+        else:
+            self._last_log_key, self._last_log_count = key, 1
+            self.log_lines.append(text)
+            del self.log_lines[:-200]
         self.refresh_log()
+
+    LOG_THROTTLE = 300  # seconds before the same status/error message may appear again
+
+    def log_line_throttled(self, text, cooldown=None):
+        """Show an automatic status or error message at most once per cooldown window, even
+        when other lines appear in between (e.g. "Waiting for Valorant..." alternating with
+        "Monitoring Valorant..." or a failing monitor restarting over and over)."""
+        key = self._LOG_TS.sub("", text)
+        now = time.monotonic()
+        seen = self.__dict__.setdefault("_throttled_logs", {})
+        last = seen.get(key)
+        if last is not None and now - last < (self.LOG_THROTTLE if cooldown is None else cooldown):
+            return
+        if len(seen) > 100:
+            seen.clear()
+        seen[key] = now
+        self.log_line(text)
 
     def clear_log(self):
         self.log_lines.clear()
+        self._last_log_key, self._last_log_count = None, 0
         if self.log_items:
             self.refresh_log()
 
