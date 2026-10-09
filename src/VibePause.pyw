@@ -1920,6 +1920,10 @@ class App:
         win.overrideredirect(True)
         win.configure(bg=self.BG)
         win.protocol("WM_DELETE_WINDOW", self.complete_exit)
+        self._legal_win = win
+        # Whenever the user comes back to VibePause (Alt+Tab, taskbar, tray) bring the Terms forward.
+        self.root.bind("<FocusIn>", self.raise_legal_popup, add="+")
+        self.root.bind("<Map>", self.raise_legal_popup, add="+")
         if self.root.winfo_viewable():
             win.transient(self.root)
             x = self.root.winfo_x() + (self.root.winfo_width() - pw) // 2
@@ -2081,10 +2085,7 @@ class App:
             if not all(read.values()):
                 return
             self.save_legal_acceptance()
-            try:
-                win.grab_release()
-            except tk.TclError:
-                pass
+            self._legal_win = None
             win.destroy()
             self.begin_operation()
 
@@ -2096,8 +2097,10 @@ class App:
         def finish_setup():
             try:
                 round_window(user32.GetParent(win.winfo_id()) or win.winfo_id(), pw, ph, self.sx(12)) if os.name == "nt" else None
+                # No grab_set(): an app-wide grab blocked the tray menu and taskbar close, so if the
+                # dialog ever ended up behind another window the app could not even be exited.
+                win.attributes("-topmost", True)
                 win.lift()
-                win.grab_set()
                 win.focus_force()
             except tk.TclError:
                 pass
@@ -2481,8 +2484,30 @@ class App:
             self.root.focus_force()
         except Exception:
             pass
+        self.raise_legal_popup()
+
+    def raise_legal_popup(self, *_):
+        """Keep the Terms dialog in front. It is a borderless window, so Windows does not
+        bring it forward with the main window (no taskbar button / Alt+Tab entry of its own)."""
+        win = getattr(self, "_legal_win", None)
+        if win is None:
+            return
+        try:
+            if not win.winfo_exists():
+                self._legal_win = None
+                return
+            win.deiconify()
+            win.attributes("-topmost", True)
+            win.lift()
+            win.focus_force()
+        except tk.TclError:
+            self._legal_win = None
 
     def on_window_close(self):
+        # Closing the app while the Terms are still unanswered counts as declining them.
+        if not self.legal_accepted:
+            self.complete_exit()
+            return
         # "Close to Tray" ticked: hide to the tray. Unticked: quit completely.
         if self.close_to_tray and TRAY_AVAILABLE:
             self.hide_window()
