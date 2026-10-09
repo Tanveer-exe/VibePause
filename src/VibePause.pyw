@@ -15,7 +15,7 @@ except Exception:
 
 APP_NAME = "VibePause"
 APP_ID = "tanveer-exe.VibePause"
-APP_VERSION = "0.1.3"
+APP_VERSION = "0.1.4"
 UPDATE_REPO = "Tanveer-exe/VibePause"
 UPDATE_ASSET = "VibePause_Setup.exe"
 # Bundled resources: PyInstaller extracts/places them under sys._MEIPASS.
@@ -76,6 +76,23 @@ CALL_APP_KEYWORDS = (
     "telegram", "signal", "viber", "facetime", "gotomeeting", "bluejeans", "ringcentral",
 )
 VALORANT_PROCESSES = ("valorant-win64-shipping.exe", "valorant.exe")
+
+
+def open_log(path):
+    if os.name != "nt":
+        return open(path, "r", encoding="utf-8", errors="ignore")
+    import msvcrt
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateFileW.restype = ctypes.c_void_p
+    kernel32.CreateFileW.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p,
+                                     ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p]
+    handle = kernel32.CreateFileW(str(path), 0x80000000, 0x7, None, 3, 0x80, None)
+    if handle in (None, 0, ctypes.c_void_p(-1).value):
+        error = ctypes.get_last_error()
+        if error in (2, 3):
+            raise FileNotFoundError(str(path))
+        raise OSError(error, "Could not open the VALORANT log", str(path))
+    return os.fdopen(msvcrt.open_osfhandle(handle, os.O_RDONLY), "r", encoding="utf-8", errors="ignore")
 
 
 def read_settings():
@@ -372,8 +389,8 @@ class Controller:
         waited = False
         while not stop_event.is_set():
             try:
-                f = open(LOG, "r", encoding="utf-8", errors="ignore")
-            except FileNotFoundError:
+                f = open_log(LOG)
+            except OSError:
                 if not waited:
                     self.ui.event("system", "Waiting for Valorant...")
                     waited = True
@@ -394,6 +411,11 @@ class Controller:
 
     def stop(self):
         self.stop_event.set()
+
+    def release(self):
+        if self.paused_by_us:
+            return self.set_playing(True)
+        return False
 
     def reset_match_state(self):
         self.in_match = False
@@ -671,23 +693,79 @@ def mix_color(a, b, f):
     return "#%02x%02x%02x" % tuple(int(a[i] + (b[i] - a[i]) * f) for i in range(3))
 
 
-class ImgCheck(tk.Frame):
-    """Tick box drawn from image assets (no native checkbox glyphs)."""
-    def __init__(self, parent, text, variable, command, imgs, bg, fg, font):
-        super().__init__(parent, bg=bg, cursor="hand2")
-        self.var, self.command, self.imgs = variable, command, imgs
-        self.icon = tk.Label(self, bg=bg, image=imgs[bool(variable.get())], bd=0)
-        self.icon.pack(side="left")
-        self.lbl = tk.Label(self, text=text, bg=bg, fg=fg, font=font, bd=0)
-        self.lbl.pack(side="left", padx=(7, 0))
-        for w in (self, self.icon, self.lbl):
-            w.bind("<Button-1>", self._click)
-        variable.trace_add("write", lambda *a: self.icon.config(image=self.imgs[bool(self.var.get())]))
+class ScaledCanvas(tk.Canvas):
+    def __init__(self, master, scale, **kw):
+        super().__init__(master, **kw)
+        self.k = scale
 
-    def _click(self, _e):
-        self.var.set(not self.var.get())
-        if self.command:
-            self.command()
+    def _p(self, values):
+        return [round(v * self.k) for v in values]
+
+    def _o(self, kw):
+        for key in ("width", "height"):
+            if isinstance(kw.get(key), (int, float)):
+                kw[key] = max(1, round(kw[key] * self.k))
+        return kw
+
+    def create_image(self, x, y, **kw):
+        return super().create_image(*self._p((x, y)), **kw)
+
+    def create_text(self, x, y, **kw):
+        return super().create_text(*self._p((x, y)), **self._o(kw))
+
+    def create_line(self, *c, **kw):
+        return super().create_line(*[round(v * self.k) for v in c], **self._o(kw))
+
+    def create_oval(self, *c, **kw):
+        return super().create_oval(*[round(v * self.k) for v in c], **self._o(kw))
+
+    def create_window(self, x, y, **kw):
+        return super().create_window(*self._p((x, y)), **self._o(kw))
+
+    def coords(self, item, *c):
+        if c:
+            return super().coords(item, *[round(v * self.k) for v in c])
+        return super().coords(item)
+
+
+async def _gsmtc_status():
+    mgr = await _SessionManager.request_async()
+    sessions = [s for s in mgr.get_sessions() if not is_call_app(_session_id(s))]
+    if not sessions:
+        return "none"
+    for session in sessions:
+        try:
+            if session.get_playback_info().playback_status == _PlaybackStatus.PLAYING:
+                return "playing"
+        except Exception:
+            continue
+    return "paused"
+
+
+def media_status():
+    if not GSMTC_AVAILABLE:
+        return None
+    try:
+        return asyncio.run(_gsmtc_status())
+    except Exception:
+        return None
+
+
+def round_window(hwnd, width, height, radius):
+    if os.name != "nt":
+        return
+    try:
+        if sys.getwindowsversion().build >= 22000:
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(ctypes.c_void_p(hwnd), 33, ctypes.byref(ctypes.c_int(2)), 4)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(ctypes.c_void_p(hwnd), 34, ctypes.byref(ctypes.c_uint(0xFFFFFFFE)), 4)
+            return
+        gdi32 = ctypes.windll.gdi32
+        gdi32.CreateRoundRectRgn.restype = ctypes.c_void_p
+        region = gdi32.CreateRoundRectRgn(0, 0, width + 1, height + 1, radius * 2, radius * 2)
+        user32.SetWindowRgn(ctypes.c_void_p(hwnd), ctypes.c_void_p(region), True)
+    except Exception:
+        pass
+
 
 class App:
     # Valorant-inspired palette: deep navy, off-white, signature red, teal for "play".
@@ -708,9 +786,15 @@ class App:
     def __init__(self, root):
         self.root = root
         self.root.title(APP_NAME)
-        self.WIN_W, self.WIN_H = 1040, 680
+        self.WIN_W, self.WIN_H = 1040, 648
+        self.S = self.compute_scale()
+        try:
+            self.root.tk.call("tk", "scaling", self.S * 96 / 72)
+        except tk.TclError:
+            pass
+        pw, ph = self.sx(self.WIN_W), self.sx(self.WIN_H)
         sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
-        self.root.geometry(f"{self.WIN_W}x{self.WIN_H}+{max(0,(sw-self.WIN_W)//2)}+{max(0,(sh-self.WIN_H)//2-20)}")
+        self.root.geometry(f"{pw}x{ph}+{max(0,(sw-pw)//2)}+{max(0,min((sh-ph)//2-20,sh-ph-48))}")
         self.root.resizable(False, False)
         self.root.configure(bg=self.BG, bd=0, highlightthickness=0)
         self.root.option_add("*Button.highlightThickness", 0)   # no focus outlines on flat buttons
@@ -742,7 +826,7 @@ class App:
         self.log_lines = []
         self.log_items = []
         self.bar_items = []
-        self.bars_active = True
+        self.bars_active = False
         self._drag_ok = False
         self.delay = 0
         self.running = False
@@ -852,6 +936,7 @@ class App:
 
     def begin_operation(self):
         self.legal_accepted = True
+        self.start_media_watch()
         self.root.after(100, self.start_monitoring)
         if self.auto_update_enabled:
             self.start_auto_update_checker()
@@ -936,37 +1021,19 @@ class App:
             return
         # Every UI icon is a PNG, explicitly resized. Source files are 64px and never shown at native size.
         sizes = {
-            "play": 17, "pause": 17, "none": 14, "gear": 16,
-            "status_play": 14, "status_pause": 14, "monitor": 16, "close": 16, "reset": 16,
+            "play": 17, "pause": 17, "none": 14, "gear": 16, "close": 16, "reset": 16,
             "chrome": 20, "youtube_music": 20, "apple_music": 20, "spotify": 20,
-            "vibepause_logo_16": 16, "vibepause_logo_20": 20, "vibepause_logo_24": 24, "vibepause_logo_32": 32,
-            "check_on": 18, "check_off": 18,
-            "ev_combat": 18, "ev_start": 18, "ev_shop": 18, "ev_finish": 18,
-            "ev_lobby": 18, "ev_agent": 18, "ev_ult": 18, "ev_death": 18,
+            "vibepause_logo_24": 24, "vibepause_logo_32": 32,
         }
         for name, size in sizes.items():
             path = self.asset_dir / f"{name}.png"
             if path.exists():
                 try:
-                    im = Image.open(path).convert("RGBA").resize((size, size), Image.Resampling.LANCZOS)
+                    px = self.sx(size)
+                    im = Image.open(path).convert("RGBA").resize((px, px), Image.Resampling.LANCZOS)
                     self.assets[name] = ImageTk.PhotoImage(im)
                 except Exception:
                     pass
-        # Death icon is generated locally so no extra asset file is required.
-        if "ev_death" not in self.assets:
-            try:
-                im = Image.new("RGBA", (18, 18), (0, 0, 0, 0))
-                d = ImageDraw.Draw(im)
-                d.ellipse((2, 2, 16, 16), outline=(255, 70, 85, 255), width=2)
-                d.line((6, 6, 12, 12), fill=(255, 70, 85, 255), width=2)
-                d.line((12, 6, 6, 12), fill=(255, 70, 85, 255), width=2)
-                self.assets["ev_death"] = ImageTk.PhotoImage(im)
-            except Exception:
-                pass
-        try:   # hero banner is already drawn at its exact display size
-            self.assets["hero_bg"] = ImageTk.PhotoImage(Image.open(self.asset_dir / "hero_bg.png").convert("RGB"))
-        except Exception:
-            pass
 
     def img(self, name):
         return self.assets.get(name)
@@ -1012,6 +1079,7 @@ class App:
 
             SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_NOACTIVATE, SWP_FRAMECHANGED = 0x2, 0x1, 0x4, 0x10, 0x20
             user32.SetWindowPos(hwnd, None, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED)
+            round_window(hwnd, self.sx(self.WIN_W), self.sx(self.WIN_H), self.sx(12))
             # Windows can refresh the non-client icon when the frame changes.
             if self._hicon_big:
                 user32.SendMessageW(hwnd, WM_SETICON, 1, self._hicon_big)
@@ -1041,10 +1109,10 @@ class App:
         else:
             self.root.geometry(f"+{x}+{y}")
 
-    LEFT_CARD = (28, 82, 328, 648)
-    EVENTS_CARD = (350, 82, 1012, 456)
-    MEDIA_CARD = (350, 472, 672, 648)
-    ACTIVITY_CARD = (690, 472, 1012, 648)
+    LEFT_CARD = (28, 82, 328, 616)
+    EVENTS_CARD = (350, 82, 1012, 432)
+    MEDIA_CARD = (350, 448, 672, 616)
+    ACTIVITY_CARD = (690, 448, 1012, 616)
     RING_CENTER = (178, 214)
     RING_SIZE = 190
     TILE_SIZE = (303, 68)
@@ -1052,12 +1120,27 @@ class App:
     LOG_ROWS = 5
     HEADER_H = 72
 
+    def sx(self, value):
+        return int(round(value * self.S))
+
+    def compute_scale(self):
+        try:
+            dpi = float(self.root.winfo_fpixels("1i"))
+        except tk.TclError:
+            dpi = 96.0
+        scale = min(3.0, max(1.0, dpi / 96.0))
+        scale = min(scale, self.root.winfo_screenheight() / (self.WIN_H + 56))
+        return round(max(0.75, scale), 2)
+
     def keep(self, photo):
         self.imgs.append(photo)
         return photo
 
     def photo(self, image):
         return self.keep(ImageTk.PhotoImage(image))
+
+    def gi(self, w, h, radius, **kw):
+        return glass_image(self.sx(w), self.sx(h), self.sx(radius), **kw)
 
     def font_for(self, size, bold=False):
         return tkfont.Font(root=self.root, font=self.F(size, bold))
@@ -1070,13 +1153,13 @@ class App:
         return text + "..."
 
     def tile_origin(self, i):
-        return 372 + (i % 2) * 315, 130 + (i // 2) * 78
+        return 372 + (i % 2) * 315, 130 + (i // 2) * 74
 
     def chip_origin(self, i):
-        return 372 + (i % 2) * 147, 520 + (i // 2) * 46
+        return 372 + (i % 2) * 147, 496 + (i // 2) * 46
 
-    def make_clickable(self, tag, command, hover=None):
-        cv = self.cv
+    def make_clickable(self, tag, command, hover=None, cv=None):
+        cv = cv or self.cv
 
         def enter(_e):
             cv.config(cursor="hand2")
@@ -1093,7 +1176,7 @@ class App:
         cv.tag_bind(tag, "<Leave>", leave)
 
     def canvas_press(self, event):
-        self._drag_ok = event.y < self.HEADER_H and "nodrag" not in self.cv.gettags("current")
+        self._drag_ok = event.y < self.sx(self.HEADER_H) and "nodrag" not in self.cv.gettags("current")
         if self._drag_ok:
             self.start_drag(event)
 
@@ -1103,7 +1186,7 @@ class App:
 
     def build(self):
         W, H = self.WIN_W, self.WIN_H
-        self.cv = tk.Canvas(self.root, width=W, height=H, bg=self.BG, bd=0, highlightthickness=0)
+        self.cv = ScaledCanvas(self.root, self.S, width=self.sx(W), height=self.sx(H), bg=self.BG, bd=0, highlightthickness=0)
         self.cv.pack(fill="both", expand=True)
         self.hero = self.cv
         self.compose_scene(W, H)
@@ -1121,11 +1204,11 @@ class App:
         self.animate_bars()
 
     def compose_scene(self, W, H):
-        scene = render_aurora(W, H)
+        scene = render_aurora(self.sx(W), self.sx(H))
 
         def card(box, radius, **kw):
             x0, y0, x1, y1 = box
-            scene.alpha_composite(glass_image(x1 - x0, y1 - y0, radius, **kw), (x0, y0))
+            scene.alpha_composite(self.gi(x1 - x0, y1 - y0, radius, **kw), (self.sx(x0), self.sx(y0)))
 
         card(self.LEFT_CARD, 26, fill=(255, 255, 255, 16))
         card(self.EVENTS_CARD, 26, fill=(255, 255, 255, 16))
@@ -1134,22 +1217,25 @@ class App:
         tw, th = self.TILE_SIZE
         for i in range(len(EVENTS)):
             x, y = self.tile_origin(i)
-            scene.alpha_composite(glass_image(tw, th, 16, fill=(255, 255, 255, 14), border=(255, 255, 255, 36)), (x, y))
+            scene.alpha_composite(self.gi(tw, th, 16, fill=(255, 255, 255, 14), border=(255, 255, 255, 36)),
+                                  (self.sx(x), self.sx(y)))
         cw, ch = self.CHIP_SIZE
         for i in range(len(MEDIA_APPS)):
             x, y = self.chip_origin(i)
-            scene.alpha_composite(glass_image(cw, ch, 12, fill=(255, 255, 255, 14), border=(255, 255, 255, 30)), (x, y))
-        d = self.RING_SIZE
-        cx, cy = self.RING_CENTER
-        ring = render_ring(d, 5)
-        pad = 46
+            scene.alpha_composite(self.gi(cw, ch, 12, fill=(255, 255, 255, 14), border=(255, 255, 255, 30)),
+                                  (self.sx(x), self.sx(y)))
+        d = self.sx(self.RING_SIZE)
+        cx, cy = self.sx(self.RING_CENTER[0]), self.sx(self.RING_CENTER[1])
+        ring = render_ring(d, max(2, self.sx(5)))
+        pad = self.sx(46)
         glow = Image.new("RGBA", (d + 2 * pad, d + 2 * pad), (0, 0, 0, 0))
         glow.alpha_composite(ring, (pad, pad))
-        glow = glow.filter(ImageFilter.GaussianBlur(18))
+        glow = glow.filter(ImageFilter.GaussianBlur(self.sx(18)))
         glow.putalpha(glow.getchannel("A").point(lambda v: v * 6 // 10))
         scene.alpha_composite(glow, (cx - d // 2 - pad, cy - d // 2 - pad))
         scene.alpha_composite(ring, (cx - d // 2, cy - d // 2))
-        self.scene_photo = self.photo(scene.convert("RGB"))
+        self.scene_img = scene.convert("RGB")
+        self.scene_photo = self.photo(self.scene_img)
 
     def build_chip_images(self):
         styles = {
@@ -1159,12 +1245,14 @@ class App:
         }
         self.chip_imgs = {}
         for state, (fill, border, icon) in styles.items():
-            chip = glass_image(34, 34, 11, fill=fill, border=border, sheen=10)
+            chip = self.gi(34, 34, 11, fill=fill, border=border, sheen=10)
             path = self.asset_dir / f"{icon}.png"
             if path.exists():
                 try:
-                    glyph = Image.open(path).convert("RGBA").resize((16, 16), Image.Resampling.LANCZOS)
-                    chip.alpha_composite(glyph, (9, 9))
+                    g = self.sx(16)
+                    glyph = Image.open(path).convert("RGBA").resize((g, g), Image.Resampling.LANCZOS)
+                    off = (chip.width - g) // 2
+                    chip.alpha_composite(glyph, (off, off))
                 except Exception:
                     pass
             self.chip_imgs[state] = self.photo(chip)
@@ -1196,9 +1284,9 @@ class App:
     def round_button(self, right, cy, tag, icon, command, danger=False):
         d = 36
         x0 = right - d
-        normal = self.photo(glass_image(d, d, d // 2, fill=(255, 255, 255, 18), border=(255, 255, 255, 44)))
+        normal = self.photo(self.gi(d, d, d // 2, fill=(255, 255, 255, 18), border=(255, 255, 255, 44)))
         hot = (255, 93, 143, 90) if danger else (255, 255, 255, 40)
-        hover_img = self.photo(glass_image(d, d, d // 2, fill=hot, border=(255, 255, 255, 70)))
+        hover_img = self.photo(self.gi(d, d, d // 2, fill=hot, border=(255, 255, 255, 70)))
         bg = self.cv.create_image(x0, cy, image=normal, anchor="w", tags=(tag, "nodrag"))
         if icon:
             self.cv.create_image(x0 + d // 2, cy, image=icon, tags=(tag, "nodrag"))
@@ -1208,11 +1296,11 @@ class App:
     def toggle_pill(self, right, cy, label, var, command, tag):
         cv = self.cv
         font = self.F(10, True)
-        w = self.font_for(10, True).measure(label) + 56
+        w = int(self.font_for(10, True).measure(label) / self.S) + 56
         h = 36
         x0 = right - w
-        off = self.photo(glass_image(w, h, h // 2, fill=(255, 255, 255, 14), border=(255, 255, 255, 38)))
-        on = self.photo(glass_image(w, h, h // 2, fill=(47, 227, 198, 40), border=(80, 240, 215, 125)))
+        off = self.photo(self.gi(w, h, h // 2, fill=(255, 255, 255, 14), border=(255, 255, 255, 38)))
+        on = self.photo(self.gi(w, h, h // 2, fill=(47, 227, 198, 40), border=(80, 240, 215, 125)))
         tags = (tag, "nodrag")
         bg = cv.create_image(x0, cy, image=off, anchor="w", tags=tags)
         dot = cv.create_oval(x0 + 17, cy - 5, x0 + 27, cy + 5, width=2, tags=tags)
@@ -1233,13 +1321,30 @@ class App:
         self.make_clickable(tag, click)
         return x0
 
+    def switch_photo(self, state):
+        cache = self.__dict__.setdefault("_switch_cache", {})
+        if state not in cache:
+            sw = self.gi(40, 22, 11, fill=(47, 227, 198, 90) if state else (255, 255, 255, 26),
+                         border=(80, 240, 215, 160) if state else (255, 255, 255, 60), sheen=0)
+            scale = 4
+            knob = Image.new("RGBA", (sw.width * scale, sw.height * scale), (0, 0, 0, 0))
+            dia = int(sw.height * 0.64 * scale)
+            pad = int(sw.height * 0.18 * scale)
+            kx = sw.width * scale - dia - pad if state else pad
+            ky = (sw.height * scale - dia) // 2
+            ImageDraw.Draw(knob).ellipse((kx, ky, kx + dia, ky + dia),
+                                         fill=(255, 255, 255, 245) if state else (200, 198, 230, 235))
+            sw.alpha_composite(knob.resize(sw.size, Image.Resampling.LANCZOS))
+            cache[state] = self.photo(sw)
+        return cache[state]
+
     def build_status_pill(self, right, cy):
         cv = self.cv
         font = self.F(10, True)
-        w = self.font_for(10, True).measure("VALORANT not running") + 56
+        w = int(self.font_for(10, True).measure("VALORANT not running") / self.S) + 56
         h = 36
         x0 = right - w
-        bg = self.photo(glass_image(w, h, h // 2, fill=(255, 255, 255, 14), border=(255, 255, 255, 38)))
+        bg = self.photo(self.gi(w, h, h // 2, fill=(255, 255, 255, 14), border=(255, 255, 255, 38)))
         cv.create_image(x0, cy, image=bg, anchor="w")
         self.status_dot = cv.create_oval(x0 + 17, cy - 5, x0 + 27, cy + 5, width=2, fill=self.MUTED, outline=self.MUTED)
         self.status_text = cv.create_text(x0 + 38, cy, text="Starting...", anchor="w", font=font, fill=self.MUTED)
@@ -1258,15 +1363,15 @@ class App:
             self.bar_items.append(cv.create_line(x, base_y - 5, x, base_y + 5, width=6, capstyle="round", fill=color))
         self.bar_x = [cx - 58.5 + i * 13 for i in range(10)]
         self.bar_y = base_y
-        self.hero_music = cv.create_text(cx, 424, text="Music is playing", fill=self.GREEN, font=self.F(10))
+        self.hero_music = cv.create_text(cx, 424, text="Checking media...", fill=self.MUTED, font=self.F(10))
 
         for tag, label, icon, fill, border, color, x0, command in (
             ("b_play", "Play", "play", (47, 227, 198, 52), (80, 240, 215, 115), self.GREEN, 52, self.force_play),
             ("b_pause", "Pause", "pause", (255, 93, 143, 56), (255, 125, 170, 120), self.RED, 182, self.force_pause),
         ):
-            w, h, y0 = 122, 48, 578
-            normal = self.photo(glass_image(w, h, 18, fill=fill, border=border))
-            hot = self.photo(glass_image(w, h, 18, fill=fill[:3] + (fill[3] + 36,), border=border))
+            w, h, y0 = 122, 48, 546
+            normal = self.photo(self.gi(w, h, 18, fill=fill, border=border))
+            hot = self.photo(self.gi(w, h, 18, fill=fill[:3] + (fill[3] + 36,), border=border))
             bg = cv.create_image(x0, y0, image=normal, anchor="nw", tags=(tag, "nodrag"))
             glyph = self.img(icon)
             if glyph:
@@ -1280,15 +1385,15 @@ class App:
         reset_icon = self.img("reset")
         d = 30
         rx = 1012 - 22 - d
-        normal = self.photo(glass_image(d, d, d // 2, fill=(255, 255, 255, 18), border=(255, 255, 255, 44)))
-        hot = self.photo(glass_image(d, d, d // 2, fill=(255, 255, 255, 44), border=(255, 255, 255, 70)))
+        normal = self.photo(self.gi(d, d, d // 2, fill=(255, 255, 255, 18), border=(255, 255, 255, 44)))
+        hot = self.photo(self.gi(d, d, d // 2, fill=(255, 255, 255, 44), border=(255, 255, 255, 70)))
         rbg = cv.create_image(rx, 108, image=normal, anchor="w", tags=("reset", "nodrag"))
         if reset_icon:
             cv.create_image(rx + d // 2, 108, image=reset_icon, tags=("reset", "nodrag"))
         self.make_clickable("reset", self.reset, lambda on: cv.itemconfig(rbg, image=hot if on else normal))
 
         tw, th = self.TILE_SIZE
-        clear = self.photo(Image.new("RGBA", (tw, th), (0, 0, 0, 0)))
+        clear = self.photo(Image.new("RGBA", (self.sx(tw), self.sx(th)), (0, 0, 0, 0)))
         name_font = self.font_for(11, True)
         desc_font = self.font_for(9)
         for i, (name, desc) in enumerate(EVENTS):
@@ -1297,7 +1402,7 @@ class App:
             tags = (tag, "nodrag")
             cv.create_image(x, y, image=clear, anchor="nw", tags=tags)
             cv.create_text(x + 20, y + 25, text=name, fill=self.TEXT, font=name_font, anchor="w", tags=tags)
-            cv.create_text(x + 20, y + 46, text=self.fit(desc, tw - 20 - 20 - 34 - 10, desc_font), fill=self.MUTED,
+            cv.create_text(x + 20, y + 46, text=self.fit(desc, self.sx(tw - 20 - 20 - 34 - 10), desc_font), fill=self.MUTED,
                            font=desc_font, anchor="w", tags=tags)
             v = tk.StringVar(value=self.actions[name])
             self.action_vars[name] = v
@@ -1321,7 +1426,7 @@ class App:
 
     def build_media_card(self):
         cv = self.cv
-        cv.create_text(374, 498, text="Supported media", fill=self.TEXT, font=self.F(13, True), anchor="w")
+        cv.create_text(374, 474, text="Supported media", fill=self.TEXT, font=self.F(13, True), anchor="w")
         keys = {"Google Chrome": ("chrome", "Chrome"), "YouTube Music": ("youtube_music", "YouTube Music"),
                 "Apple Music": ("apple_music", "Apple Music"), "Spotify": ("spotify", "Spotify")}
         for i, name in enumerate(MEDIA_APPS):
@@ -1331,22 +1436,22 @@ class App:
             if icon:
                 cv.create_image(x + 10, y + 18, image=icon, anchor="w")
             cv.create_text(x + 36, y + 18, text=label, fill=self.TEXT, font=self.F(9), anchor="w")
-        cv.create_text(374, 618, text="Any Windows media app. Call apps are skipped.", fill=self.MUTED,
+        cv.create_text(374, 592, text="Any Windows media app. Call apps are skipped.", fill=self.MUTED,
                        font=self.F(8), anchor="w", width=290)
 
     def build_activity_card(self):
         cv = self.cv
-        cv.create_text(712, 498, text="Live activity", fill=self.TEXT, font=self.F(13, True), anchor="w")
-        clear = cv.create_text(990, 498, text="Clear", fill=self.MUTED, font=self.F(9, True), anchor="e", tags=("clear", "nodrag"))
+        cv.create_text(712, 474, text="Live activity", fill=self.TEXT, font=self.F(13, True), anchor="w")
+        clear = cv.create_text(990, 474, text="Clear", fill=self.MUTED, font=self.F(9, True), anchor="e", tags=("clear", "nodrag"))
         self.make_clickable("clear", self.clear_log, lambda on: cv.itemconfig(clear, fill=self.TEXT if on else self.MUTED))
         self.log_font = self.font_for(9)
-        self.log_items = [cv.create_text(712, 528 + i * 22, text="", anchor="w", font=self.F(9), fill=self.MUTED)
+        self.log_items = [cv.create_text(712, 504 + i * 21, text="", anchor="w", font=self.F(9), fill=self.MUTED)
                           for i in range(self.LOG_ROWS)]
 
     def refresh_log(self):
         newest = self.log_lines[::-1][:self.LOG_ROWS]
         for i, item in enumerate(self.log_items):
-            text = self.fit(newest[i], 282, self.log_font) if i < len(newest) else ""
+            text = self.fit(newest[i], self.sx(282), self.log_font) if i < len(newest) else ""
             self.cv.itemconfig(item, text=text, fill=self.TEXT if i == 0 else "#b4b2d6")
 
     def animate_bars(self):
@@ -1363,33 +1468,74 @@ class App:
         except tk.TclError:
             pass
 
+    def set_media_state(self, state):
+        text, color, active = {
+            "playing": ("Music is playing", self.GREEN, True),
+            "paused": ("Music is paused", "#ffb3c8", False),
+            "none": ("No music app open", self.MUTED, False),
+        }.get(state, ("Media status unavailable", self.MUTED, False))
+        self.bars_active = active
+        self.cv.itemconfig(self.hero_music, text=text, fill=color)
+
+    def start_media_watch(self):
+        if getattr(self, "_media_watch_started", False):
+            return
+        self._media_watch_started = True
+        threading.Thread(target=self.media_watch, daemon=True).start()
+
+    def media_watch(self):
+        if not GSMTC_AVAILABLE:
+            self.event("media", "unknown")
+            return
+        last = None
+        while True:
+            state = media_status()
+            if state is not None and state != last:
+                last = state
+                self.event("media", state)
+            time.sleep(3)
+
     def toggle_settings(self):
         if self.settings_open:
             self.close_settings()
             return
         self.settings_open = True
-        bg = self.TOP
-        overlay = tk.Frame(self.root, bg=bg, highlightbackground=self.RED, highlightthickness=1)
-        overlay.place(relx=1.0, x=-28, y=70, anchor="ne", width=330, height=372)
-        self.settings_overlay = overlay
-        tk.Label(overlay, text="SETTINGS", bg=bg, fg=self.TEXT, font=self.F(15, True)).pack(anchor="w", padx=18, pady=(16, 4))
-        ImgCheck(overlay, "Close button sends to tray", self.close_tray_var, self.set_close_to_tray,
-                 {True: self.img("check_on"), False: self.img("check_off")},
-                 bg, self.TEXT, self.F(10)).pack(anchor="w", padx=18, pady=(2, 6))
-        tk.Label(overlay, text="Unticked: the X button exits VibePause completely.",
-                 bg=bg, fg=self.MUTED, font=self.F(9), wraplength=290, justify="left").pack(anchor="w", padx=18, pady=(0, 6))
-        tk.Label(overlay, text="Event delay", bg=bg, fg=self.TEXT, font=self.F(10)).pack(anchor="w", padx=18, pady=(8, 4))
-        row = tk.Frame(overlay, bg=bg)
-        row.pack(fill="x", padx=18)
+        W, H = 330, 372
+        x, y = self.WIN_W - 28 - W, 70
+        crop = self.scene_img.crop((self.sx(x), self.sx(y), self.sx(x + W), self.sx(y + H))).convert("RGBA")
+        blurred = crop.filter(ImageFilter.GaussianBlur(self.sx(8)))
+        mask = rounded_mask((self.sx(W), self.sx(H)), self.sx(26))
+        base = Image.composite(blurred, crop, mask)
+        base.alpha_composite(self.gi(W, H, 26, fill=(14, 14, 36, 205), border=(255, 255, 255, 70), sheen=14))
+        cv = ScaledCanvas(self.root, self.S, width=self.sx(W), height=self.sx(H), bg=self.BG, bd=0, highlightthickness=0)
+        cv.place(x=self.sx(x), y=self.sx(y))
+        cv.create_image(0, 0, image=self.photo(base), anchor="nw")
+        self.settings_overlay = cv
+        cv.create_text(24, 34, text="Settings", fill=self.TEXT, font=self.F(14, True), anchor="w")
+
+        cv.create_text(24, 82, text="Close button sends to tray", fill=self.TEXT, font=self.F(10), anchor="w", tags=("sw",))
+        switch = cv.create_image(W - 24 - 40, 71, image=self.switch_photo(bool(self.close_tray_var.get())), anchor="nw", tags=("sw",))
+        cv.create_image(0, 56, image=self.photo_clear(self.sx(W), self.sx(52)), anchor="nw", tags=("sw",))
+
+        def flip():
+            self.close_tray_var.set(not self.close_tray_var.get())
+            cv.itemconfig(switch, image=self.switch_photo(bool(self.close_tray_var.get())))
+            self.set_close_to_tray()
+
+        self.make_clickable("sw", flip, cv=cv)
+        cv.create_text(24, 112, text="Off: the X button exits VibePause completely.", fill=self.MUTED,
+                       font=self.F(9), anchor="w", width=282)
+
+        cv.create_text(24, 154, text="Event delay", fill=self.TEXT, font=self.F(10), anchor="w")
         self.delay_settings = tk.StringVar(value=str(self.delay))
         vcmd = (self.root.register(lambda v: v == "" or (v.isdigit() and len(v) <= 6)), "%P")
-        entry = tk.Entry(row, textvariable=self.delay_settings, width=9, bg=self.PANEL2, fg=self.TEXT,
+        entry = tk.Entry(cv, textvariable=self.delay_settings, width=9, bg=self.PANEL2, fg=self.TEXT,
                          insertbackground="white", relief="flat", bd=0, validate="key", validatecommand=vcmd,
                          selectbackground="#2f6fd6", selectforeground="white", font=self.F(11),
-                         highlightthickness=1, highlightbackground=self.BORDER, highlightcolor=self.RED,
-                         takefocus=True, state="normal", exportselection=False)
-        entry.pack(side="left", ipady=5)
-        # Tk's Entry maps Ctrl+A to "start of line" on Windows; make it Select All.
+                         highlightthickness=1, highlightbackground=self.BORDER, highlightcolor=self.GREEN,
+                         takefocus=True, exportselection=False)
+        cv.create_window(24, 172, window=entry, anchor="nw", width=110, height=34)
+
         def select_all(e):
             e.widget.select_range(0, "end"); e.widget.icursor("end"); return "break"
         entry.bind("<Control-a>", select_all)
@@ -1398,16 +1544,20 @@ class App:
         entry.bind("<Button-1>", lambda e: e.widget.focus_set())
         self.delay_entry = entry
         entry.after(50, lambda: (entry.focus_force(), entry.select_range(0, "end")))
-        tk.Label(row, text="milliseconds", bg=bg, fg=self.MUTED, font=self.F(9)).pack(side="left", padx=8)
-        tk.Button(overlay, text="CHECK FOR UPDATES", command=self.check_for_updates,
-                  bg=self.PANEL2, fg=self.TEXT, activebackground=self.PANEL3, activeforeground=self.TEXT,
-                  relief="flat", bd=0, padx=14, pady=7, font=self.F(9, True), cursor="hand2").pack(anchor="w", padx=18, pady=(10, 6))
-        self.update_status = tk.Label(overlay, text=f"VibePause {APP_VERSION}", bg=bg, fg=self.MUTED, font=self.F(8),
-                                      wraplength=294, justify="left", anchor="nw", height=3)
-        self.update_status.pack(anchor="w", fill="x", padx=18, pady=(0, 2))
-        tk.Button(overlay, text="SAVE SETTINGS", command=self.save_settings_page,
-                  bg=self.RED, fg="white", activebackground="#ff6a77", activeforeground="white", relief="flat", bd=0,
-                  padx=14, pady=7, font=self.F(9, True), cursor="hand2", width=27, height=1).pack(anchor="w", padx=18, pady=(8, 14))
+        cv.create_text(148, 189, text="milliseconds", fill=self.MUTED, font=self.F(9), anchor="w")
+
+        def button(tag, top, label, command, fill, border, color):
+            w, h = 282, 40
+            normal = self.photo(self.gi(w, h, 16, fill=fill, border=border))
+            hot = self.photo(self.gi(w, h, 16, fill=fill[:3] + (fill[3] + 36,), border=border))
+            bg = cv.create_image(24, top, image=normal, anchor="nw", tags=(tag,))
+            cv.create_text(24 + w // 2, top + h // 2, text=label, fill=color, font=self.F(10, True), tags=(tag,))
+            self.make_clickable(tag, command, lambda on: cv.itemconfig(bg, image=hot if on else normal), cv=cv)
+
+        button("upd", 226, "Check for updates", self.check_for_updates, (255, 255, 255, 18), (255, 255, 255, 50), self.TEXT)
+        self.update_status_item = cv.create_text(24, 280, text=f"VibePause {APP_VERSION}", fill=self.MUTED,
+                                                 font=self.F(8), anchor="nw", width=282)
+        button("save", 318, "Save settings", self.save_settings_page, (255, 93, 143, 62), (255, 125, 170, 125), self.RED)
 
     def check_for_updates(self):
         """Settings > CHECK FOR UPDATES. Runs the network work off the UI thread."""
@@ -1418,11 +1568,11 @@ class App:
         threading.Thread(target=self._check_for_updates_worker, daemon=True).start()
 
     def _set_update_status(self, text, color=None):
-        if hasattr(self, "update_status"):
+        if self.settings_open and hasattr(self, "update_status_item"):
             try:
-                self.update_status.config(text=text, fg=color or self.MUTED)
+                self.settings_overlay.itemconfig(self.update_status_item, text=text, fill=color or self.MUTED)
             except tk.TclError:
-                pass   # settings panel was closed meanwhile
+                pass
 
     def _check_for_updates_worker(self):
         try:
@@ -1614,7 +1764,7 @@ class App:
 
     def show_legal_popup(self):
         """Show terms and conditions and privacy policy popup"""
-        W, H = 640, 560
+        W, H = self.sx(640), self.sx(560)
         legal_window = tk.Toplevel(self.root)
         legal_window.title("Legal Agreement")
         legal_window.configure(bg=self.BG)
@@ -1779,8 +1929,13 @@ class App:
     def stop_monitoring(self):
         self.running = False
         self.controller.stop()
+        threading.Thread(target=self.release_music, daemon=True).start()
         self.status_update(False)
         self.log_line("VibePause stopped")
+
+    def release_music(self):
+        if self.controller.release():
+            self.event("music", "Playing")
 
     def status_update(self, active=None):
         if not self.running:
@@ -1794,9 +1949,7 @@ class App:
         self.update_tray()
 
     def set_music_status(self, playing):
-        self.bars_active = bool(playing)
-        self.cv.itemconfig(self.hero_music, text="Music is playing" if playing else "Music is paused",
-                           fill=self.GREEN if playing else "#ffb3c8")
+        self.set_media_state("playing" if playing else "paused")
 
     def force_play(self):
         self._manual(True)
@@ -1856,6 +2009,8 @@ class App:
         elif kind == "music":
             self.set_music_status(value == "Playing")
             self.log_line(f"{now}  Music: {value}")
+        elif kind == "media":
+            self.set_media_state(value)
         elif kind == "valorant":
             self.valorant_running = bool(value)
             self.status_update()
@@ -1958,28 +2113,25 @@ class App:
     def show_tray_popup(self, px, py):
         self.close_tray_popup()
         W, H = 252, 200
+        pw, ph = self.sx(W), self.sx(H)
         win = tk.Toplevel(self.root)
         self.tray_popup = win
         win.overrideredirect(True)
-        key = "#010101"
-        win.configure(bg=key)
+        win.configure(bg=self.BG)
         try:
             win.attributes("-topmost", True)
-            win.attributes("-transparentcolor", key)
         except tk.TclError:
             pass
         sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
-        x = min(max(8, px - W // 2), sw - W - 8)
-        y = py - H - 14 if py > sh // 2 else py + 14
-        y = min(max(8, y), sh - H - 8)
-        win.geometry(f"{W}x{H}+{x}+{y}")
+        x = min(max(8, px - pw // 2), sw - pw - 8)
+        y = py - ph - 14 if py > sh // 2 else py + 14
+        y = min(max(8, y), sh - ph - 8)
+        win.geometry(f"{pw}x{ph}+{x}+{y}")
 
-        panel = render_aurora(W, H)
-        panel.alpha_composite(glass_image(W, H, 20, fill=(255, 255, 255, 22), border=(255, 255, 255, 64)))
-        flat = Image.new("RGB", (W, H), (1, 1, 1))
-        flat.paste(panel.convert("RGB"), (0, 0), rounded_mask((W, H), 20))
-        photos = [ImageTk.PhotoImage(flat)]
-        cv = tk.Canvas(win, width=W, height=H, bg=key, bd=0, highlightthickness=0)
+        panel = render_aurora(pw, ph)
+        panel.alpha_composite(self.gi(W, H, 8, fill=(255, 255, 255, 22), border=(255, 255, 255, 64)))
+        photos = [ImageTk.PhotoImage(panel.convert("RGB"))]
+        cv = ScaledCanvas(win, self.S, width=pw, height=ph, bg=self.BG, bd=0, highlightthickness=0)
         cv.pack()
         cv.create_image(0, 0, image=photos[0], anchor="nw")
 
@@ -1997,31 +2149,20 @@ class App:
         cv.create_text(65, 44, text=label, fill=color, font=self.F(9), anchor="w")
         cv.create_line(16, 62, W - 16, 62, fill="#4a4a7a")
 
-        hover = ImageTk.PhotoImage(glass_image(W - 16, 38, 11, fill=(255, 255, 255, 34), border=(255, 255, 255, 0), sheen=0))
-        switch = {}
-        for state in (True, False):
-            sw_img = glass_image(40, 22, 11, fill=(47, 227, 198, 90) if state else (255, 255, 255, 26),
-                                 border=(80, 240, 215, 160) if state else (255, 255, 255, 60), sheen=0)
-            knob = Image.new("RGBA", (40 * 4, 22 * 4), (0, 0, 0, 0))
-            kx = 40 * 4 - 18 * 4 - 2 * 4 if state else 4 * 4
-            ImageDraw.Draw(knob).ellipse((kx, 4 * 4 - 0, kx + 14 * 4, 4 * 4 + 14 * 4), fill=(255, 255, 255, 245) if state else (200, 198, 230, 235))
-            sw_img.alpha_composite(knob.resize((40, 22), Image.Resampling.LANCZOS))
-            switch[state] = ImageTk.PhotoImage(sw_img)
-        photos += [hover] + list(switch.values())
+        hover = ImageTk.PhotoImage(self.gi(W - 16, 38, 11, fill=(255, 255, 255, 34), border=(255, 255, 255, 0), sheen=0))
+        photos.append(hover)
 
         def row(i, text, command, with_switch=False):
             top = 70 + i * 42
             tag = f"row{i}"
             shade = cv.create_image(8, top, image=hover, anchor="nw", state="hidden", tags=(tag,))
             cv.create_text(24, top + 19, text=text, fill=self.TEXT, font=self.F(11), anchor="w", tags=(tag,))
-            toggle = None
             if with_switch:
-                toggle = cv.create_image(W - 24, top + 19, image=switch[bool(self.active)], anchor="e", tags=(tag,))
-            cv.create_image(8, top, image=self.photo_clear(W - 16, 38), anchor="nw", tags=(tag,))
+                cv.create_image(W - 24, top + 19, image=self.switch_photo(bool(self.active)), anchor="e", tags=(tag,))
+            cv.create_image(8, top, image=self.photo_clear(self.sx(W - 16), self.sx(38)), anchor="nw", tags=(tag,))
             cv.tag_bind(tag, "<Enter>", lambda e: (cv.itemconfig(shade, state="normal"), cv.config(cursor="hand2")))
             cv.tag_bind(tag, "<Leave>", lambda e: (cv.itemconfig(shade, state="hidden"), cv.config(cursor="")))
             cv.tag_bind(tag, "<Button-1>", lambda e: (self.close_tray_popup(), command()))
-            return toggle
 
         row(0, "Active", lambda: self.set_active_from_tray(not self.active), with_switch=True)
         row(1, "Open VibePause", self._show)
@@ -2035,7 +2176,7 @@ class App:
                 return
             try:
                 mx, my = win.winfo_pointerxy()
-                inside = win.winfo_rootx() <= mx <= win.winfo_rootx() + W and win.winfo_rooty() <= my <= win.winfo_rooty() + H
+                inside = win.winfo_rootx() <= mx <= win.winfo_rootx() + pw and win.winfo_rooty() <= my <= win.winfo_rooty() + ph
                 state["age"] += 1
                 if inside:
                     state["entered"] = True
@@ -2055,6 +2196,7 @@ class App:
         if os.name == "nt":
             try:
                 handle = user32.GetParent(win.winfo_id()) or win.winfo_id()
+                round_window(handle, pw, ph, self.sx(8))
                 user32.SetForegroundWindow(handle)
             except Exception:
                 pass
@@ -2104,6 +2246,9 @@ class App:
     def complete_exit(self):
         # Shutdown must be fast and must never wait on network I/O from the UI.
         self.controller.stop()
+        releaser = threading.Thread(target=self.controller.release, daemon=True)
+        releaser.start()
+        releaser.join(2.5)
         self.stop_auto_update_checker()
 
         if self.tray_icon:
@@ -2130,11 +2275,19 @@ def setup_win32():
     if os.name != "nt":
         return
     from ctypes import c_void_p, c_int, c_uint, c_size_t, c_ssize_t
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)
+    except Exception:
+        try:
+            user32.SetProcessDPIAware()
+        except Exception:
+            pass
     user32.GetParent.restype = c_void_p;            user32.GetParent.argtypes = [c_void_p]
     user32.GetWindowLongPtrW.restype = c_ssize_t;   user32.GetWindowLongPtrW.argtypes = [c_void_p, c_int]
     user32.SetWindowLongPtrW.restype = c_ssize_t;   user32.SetWindowLongPtrW.argtypes = [c_void_p, c_int, c_ssize_t]
     user32.SetWindowPos.restype = c_int;            user32.SetWindowPos.argtypes = [c_void_p, c_void_p, c_int, c_int, c_int, c_int, c_uint]
     user32.SendMessageW.restype = c_ssize_t;        user32.SendMessageW.argtypes = [c_void_p, c_uint, c_size_t, c_void_p]
+    user32.SetWindowRgn.restype = c_int;            user32.SetWindowRgn.argtypes = [c_void_p, c_void_p, c_int]
     user32.LoadImageW.restype = c_void_p;           user32.LoadImageW.argtypes = [c_void_p, ctypes.c_wchar_p, c_uint, c_int, c_int, c_uint]
 
 def set_windows_app_id():
