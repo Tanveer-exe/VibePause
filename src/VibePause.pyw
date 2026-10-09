@@ -126,6 +126,18 @@ def write_settings(data):
         return False
 
 
+def write_error_log(text):
+    try:
+        APPDATA.mkdir(parents=True, exist_ok=True)
+        path = APPDATA / "error.log"
+        if path.exists() and path.stat().st_size > 200000:
+            path.unlink()
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {APP_VERSION}\n{text}\n\n")
+    except OSError:
+        pass
+
+
 class PROCESSENTRY32W(ctypes.Structure):
     _fields_ = [("dwSize", ctypes.c_uint32), ("cntUsage", ctypes.c_uint32),
                 ("th32ProcessID", ctypes.c_uint32), ("th32DefaultHeapID", ctypes.c_size_t),
@@ -236,19 +248,15 @@ def fetch_releases(timeout=UPDATE_CHECK_TIMEOUT):
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
-        if e.code == 404:
-            raise UpdateError("GitHub returned 404 for the VibePause releases. The repository must be public for updates to work.")
-        if e.code in (403, 429):
-            raise UpdateError("GitHub is rate-limiting update checks right now. Try again in a few minutes.")
-        raise UpdateError(f"GitHub returned an error (HTTP {e.code}). Try again later.")
-    except urllib.error.URLError as e:
-        raise UpdateError(f"Could not reach GitHub. Check your internet connection. ({e.reason})")
-    except (TimeoutError, OSError) as e:
-        raise UpdateError(f"Could not reach GitHub ({type(e).__name__}). Check your internet connection.")
+        write_error_log(f"Update check: HTTP {e.code}")
+        raise UpdateError("Can't check for updates right now. Try again later.")
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        write_error_log(f"Update check: {type(e).__name__}: {e}")
+        raise UpdateError("Can't check for updates. Check your internet connection.")
     except ValueError:
-        raise UpdateError("GitHub sent a reply VibePause could not read.")
+        raise UpdateError("Can't check for updates right now. Try again later.")
     if not isinstance(data, list):
-        raise UpdateError("Unexpected reply from GitHub.")
+        raise UpdateError("Can't check for updates right now. Try again later.")
     return data
 
 def verify_installer(path, digest):
@@ -911,12 +919,21 @@ class App:
         self.apply_windows_app_style()
         self.root.after(80, self.process)
         self.root.protocol("WM_DELETE_WINDOW", self.on_window_close)
+        self.root.report_callback_exception = self.report_error
         self.create_tray()
         self.start_quit_listener()
         if "--startup" in sys.argv and TRAY_AVAILABLE:
             self.root.withdraw()   # launched by Windows at sign-in: start in the tray
 
         self.check_legal_acceptance_on_startup()
+
+    def report_error(self, exc, val, tb):
+        import traceback
+        write_error_log("".join(traceback.format_exception(exc, val, tb)))
+        try:
+            self.log_line("Something went wrong. Details are in error.log")
+        except Exception:
+            pass
 
     def F(self, size, bold=False):
         return (self.fam, size, "bold" if bold else "normal")
@@ -1644,7 +1661,8 @@ class App:
         except UpdateError as e:
             self.event("update", ("error", str(e)))
         except Exception as e:
-            self.event("update", ("error", f"Update check failed ({type(e).__name__}: {e or 'no details'})."))
+            write_error_log(f"Update check: {type(e).__name__}: {e}")
+            self.event("update", ("error", "Can't check for updates right now. Try again later."))
 
     def handle_update_event(self, value):
         kind = value[0]
@@ -1708,7 +1726,7 @@ class App:
                 if stop.wait(60):
                     break
             except Exception as e:
-                print(f"Background update check error: {e}")
+                write_error_log(f"Background update check: {type(e).__name__}: {e}")
                 if stop.wait(60):
                     break
 
@@ -1769,7 +1787,8 @@ class App:
             self.event("update", ("error", str(e)))
         except Exception as e:
             self.discard_file(path)
-            self.event("update", ("error", f"Update download failed ({type(e).__name__}: {e or 'no details'})."))
+            write_error_log(f"Update download: {type(e).__name__}: {e}")
+            self.event("update", ("error", "Update download failed. Try again later."))
 
     def discard_file(self, path):
         if not path:
@@ -1787,7 +1806,8 @@ class App:
             self.complete_exit()   # stop monitoring, remove tray icon, quit so the installer can replace files
         except Exception as e:
             self._update_busy = False
-            self._set_update_status(f"Could not start the installer: {e}", self.RED)
+            write_error_log(f"Launch installer: {type(e).__name__}: {e}")
+            self._set_update_status("Could not start the installer.", self.RED)
 
     def start_auto_update_checker(self):
         """Start the background update checking thread"""
@@ -2199,7 +2219,8 @@ class App:
 
         self._tray_state = None
         self.tray_icon = GlassIcon("VibePause", self.tray_images[True], APP_NAME, menu)
-        threading.Thread(target=self.tray_icon.run, daemon=True).start()
+        self.tray_thread = threading.Thread(target=self.tray_icon.run, daemon=True)
+        self.tray_thread.start()
 
     def update_tray(self):
         icon = self.tray_icon
@@ -2374,9 +2395,13 @@ class App:
 
         if self.tray_icon:
             try:
+                self.tray_icon.visible = False
                 self.tray_icon.stop()
             except Exception:
                 pass
+            thread = getattr(self, "tray_thread", None)
+            if thread is not None:
+                thread.join(1.0)
             self.tray_icon = None
 
         try:
