@@ -45,8 +45,25 @@ UPDATE_RETRY_DELAY = 5 * 60  # seconds before retrying a failed background check
 UPDATE_CHECK_TIMEOUT = 12  # seconds for GitHub API request
 
 # Legal acceptance constants
-LEGAL_VERSION = "1"
-LEGAL_ACCEPTANCE_KEY = "legal_accepted_terms_" + LEGAL_VERSION
+LEGAL_DOCS = ("TERMS_AND_CONDITIONS.md", "PRIVACY_POLICY.md")
+LEGAL_ACCEPTANCE_KEY = "legal_accepted_hash"
+
+
+def legal_fingerprint():
+    """Short hash of the bundled Terms and Privacy Policy text.
+
+    Acceptance is stored as this hash, so editing either document automatically asks users to
+    accept again, with no version number to remember to raise. Line endings and surrounding
+    whitespace are normalised so Git/Windows newline differences never trigger a prompt."""
+    h = hashlib.sha256()
+    for name in LEGAL_DOCS:
+        try:
+            text = (RESOURCE_DIR / name).read_text(encoding="utf-8-sig")
+        except OSError:
+            text = ""
+        text = text.replace("\r\n", "\n").replace("\r", "\n").strip()
+        h.update(name.encode("utf-8") + b"\0" + text.encode("utf-8") + b"\0")
+    return h.hexdigest()[:16]
 
 EVENTS = [
     ("Combat Start", "A round becomes active"),
@@ -1933,15 +1950,15 @@ class App:
         # daemonized and will exit on its own after the stop event is signaled.
 
     def check_legal_acceptance(self):
-        data = read_settings()
-        if data.get(LEGAL_ACCEPTANCE_KEY):
-            return True
-        return LEGAL_VERSION == "1" and any(k.startswith("legal_accepted_v") and v for k, v in data.items())
+        """True only if the user accepted the exact Terms and Privacy Policy text bundled now."""
+        return read_settings().get(LEGAL_ACCEPTANCE_KEY) == legal_fingerprint()
 
     def save_legal_acceptance(self):
-        """Save that legal documents have been accepted for current version"""
+        """Record acceptance of the current documents, replacing any older acceptance."""
         d = read_settings()
-        d[LEGAL_ACCEPTANCE_KEY] = True
+        for k in [k for k in d if k.startswith("legal_accepted")]:
+            del d[k]   # drop acceptances of earlier versions of the documents
+        d[LEGAL_ACCEPTANCE_KEY] = legal_fingerprint()
         write_settings(d)
 
     def show_legal_popup(self):
