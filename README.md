@@ -118,6 +118,8 @@ If a newer version is available, VibePause will ask for confirmation before down
 
 If you are already running the latest version, VibePause will let you know.
 
+VibePause can also check for updates automatically in the background (about every four hours). You can turn this off in **Settings**; then it only contacts GitHub when you click **Check for updates**.
+
 Update checks use the public GitHub API to check for releases. No other information is sent as part of the update check.
 
 ---
@@ -153,6 +155,8 @@ VibePause runs locally and does not require:
 - Network traffic access
 
 The application only uses network access for checking and downloading updates from GitHub.
+
+Your settings and a local `error.log` (technical error details, never uploaded) are stored in `Documents\VibePause`. See the full [Privacy Policy](src/PRIVACY_POLICY.md) and [Terms and Conditions](src/TERMS_AND_CONDITIONS.md).
 
 ---
 
