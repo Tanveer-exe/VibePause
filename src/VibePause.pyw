@@ -45,7 +45,8 @@ UPDATE_RETRY_DELAY = 5 * 60  # seconds before retrying a failed background check
 UPDATE_CHECK_TIMEOUT = 12  # seconds for GitHub API request
 
 # Legal acceptance constants
-LEGAL_ACCEPTANCE_KEY = "legal_accepted_v" + APP_VERSION.replace(".", "_")
+LEGAL_VERSION = "1"
+LEGAL_ACCEPTANCE_KEY = "legal_accepted_terms_" + LEGAL_VERSION
 
 EVENTS = [
     ("Combat Start", "A round becomes active"),
@@ -1863,8 +1864,10 @@ class App:
         # daemonized and will exit on its own after the stop event is signaled.
 
     def check_legal_acceptance(self):
-        """Check if legal documents have been accepted for current version"""
-        return bool(read_settings().get(LEGAL_ACCEPTANCE_KEY, False))
+        data = read_settings()
+        if data.get(LEGAL_ACCEPTANCE_KEY):
+            return True
+        return LEGAL_VERSION == "1" and any(k.startswith("legal_accepted_v") and v for k, v in data.items())
 
     def save_legal_acceptance(self):
         """Save that legal documents have been accepted for current version"""
