@@ -8,6 +8,8 @@ Keep each section short. The heading must match the version number, for example 
 - New: an optional hotkey to turn VibePause on or off (off by default, and you can clear it any time)
 - New: Settings has Open log folder and Copy diagnostics buttons to make bug reports easier
 - New: the update prompt now shows what's new
+- Fixed: dying in a match is now detected, so Player Eliminated works
+- Fixed: the music no longer pauses for a moment when the buy phase opens
 - Fixed: the extra blue strip on the right and bottom of the window
 - Fixed: the Terms screen could hide behind other windows and leave the app stuck
 - Fixed: settings files are read more reliably
