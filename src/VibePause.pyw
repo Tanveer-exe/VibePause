@@ -918,6 +918,7 @@ class App:
         self.build()
         self.apply_windows_app_style()
         self.root.after(80, self.process)
+        self.root.after(700, self.warm_settings)
         self.root.protocol("WM_DELETE_WINDOW", self.on_window_close)
         self.root.report_callback_exception = self.report_error
         self.create_tray()
@@ -1572,6 +1573,11 @@ class App:
                 self.event("media", state)
             time.sleep(3)
 
+    def warm_settings(self):
+        if not self.settings_open:
+            self.toggle_settings()
+            self.close_settings()
+
     def toggle_settings(self):
         if self.settings_open:
             self.close_settings()
@@ -1579,14 +1585,17 @@ class App:
         self.settings_open = True
         W, H = 330, 372
         x, y = self.WIN_W - 28 - W, 70
-        crop = self.scene_img.crop((self.sx(x), self.sx(y), self.sx(x + W), self.sx(y + H))).convert("RGBA")
-        blurred = crop.filter(ImageFilter.GaussianBlur(self.sx(8)))
-        mask = rounded_mask((self.sx(W), self.sx(H)), self.sx(26))
-        base = Image.composite(blurred, crop, mask)
-        base.alpha_composite(self.gi(W, H, 26, fill=(14, 14, 36, 205), border=(255, 255, 255, 70), sheen=14))
+        cache = self.__dict__.setdefault("_settings_cache", {})
+        if "base" not in cache:
+            crop = self.scene_img.crop((self.sx(x), self.sx(y), self.sx(x + W), self.sx(y + H))).convert("RGBA")
+            blurred = crop.filter(ImageFilter.GaussianBlur(self.sx(8)))
+            mask = rounded_mask((self.sx(W), self.sx(H)), self.sx(26))
+            base = Image.composite(blurred, crop, mask)
+            base.alpha_composite(self.gi(W, H, 26, fill=(14, 14, 36, 205), border=(255, 255, 255, 70), sheen=14))
+            cache["base"] = self.photo(base)
         cv = ScaledCanvas(self.root, self.S, width=self.sx(W), height=self.sx(H), bg=self.BG, bd=0, highlightthickness=0)
         cv.place(x=self.sx(x), y=self.sx(y))
-        cv.create_image(0, 0, image=self.photo(base), anchor="nw")
+        cv.create_image(0, 0, image=cache["base"], anchor="nw")
         self.settings_overlay = cv
         cv.create_text(24, 34, text="Settings", fill=self.TEXT, font=self.F(14, True), anchor="w")
 
@@ -1620,13 +1629,21 @@ class App:
         entry.bind("<Return>", lambda e: self.save_settings_page())
         entry.bind("<Button-1>", lambda e: e.widget.focus_set())
         self.delay_entry = entry
-        entry.after(50, lambda: (entry.focus_force(), entry.select_range(0, "end")))
+        def focus_entry():
+            try:
+                entry.focus_force()
+                entry.select_range(0, "end")
+            except tk.TclError:
+                pass
+        entry.after(50, focus_entry)
         cv.create_text(148, 189, text="milliseconds", fill=self.MUTED, font=self.F(9), anchor="w")
 
         def button(tag, top, label, command, fill, border, color):
             w, h = 282, 40
-            normal = self.photo(self.gi(w, h, 16, fill=fill, border=border))
-            hot = self.photo(self.gi(w, h, 16, fill=fill[:3] + (fill[3] + 36,), border=border))
+            if tag not in cache:
+                cache[tag] = (self.photo(self.gi(w, h, 16, fill=fill, border=border)),
+                              self.photo(self.gi(w, h, 16, fill=fill[:3] + (fill[3] + 36,), border=border)))
+            normal, hot = cache[tag]
             bg = cv.create_image(24, top, image=normal, anchor="nw", tags=(tag,))
             cv.create_text(24 + w // 2, top + h // 2, text=label, fill=color, font=self.F(10, True), tags=(tag,))
             self.make_clickable(tag, command, lambda on: cv.itemconfig(bg, image=hot if on else normal), cv=cv)
