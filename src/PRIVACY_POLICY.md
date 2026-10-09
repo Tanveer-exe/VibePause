@@ -21,16 +21,19 @@ VibePause runs on your computer. It does not collect, store or sell personal dat
 
 ## Data Stored On Your Computer
 
-VibePause saves your settings in a file named settings.json in the Documents\VibePause folder. This file contains your chosen actions for each game event, the event delay, your startup and tray preferences, update check preference, and which version of the legal terms you accepted.
+VibePause saves your settings in a file named settings.json in the Documents\VibePause folder. This file contains your chosen actions for each game event, the event delay, your startup and tray preferences, update check preference, the optional hotkey you chose (none by default), and which version of the legal terms you accepted.
 
 This file stays on your computer. It is never uploaded. Uninstalling VibePause keeps this file so your settings survive a reinstall. You can delete the folder yourself at any time.
 
 If something goes wrong, VibePause may also write technical error details (such as an error message and the app version) to a file named error.log in the same folder. This file helps you report a problem if you choose to, but it stays on your computer and is never uploaded or sent automatically.
 
+The Settings screen has two support buttons. Open log folder opens this folder in Windows Explorer. Copy diagnostics puts a short report on your clipboard: the app and Windows versions, your settings, recent activity and the end of error.log, with your Windows user name removed from file paths. Nothing is sent anywhere unless you paste it somewhere yourself, for example into a GitHub issue.
+
 ## What VibePause Reads
 
 - The VALORANT game log file on your computer (ShooterGame.log), read locally to detect game events such as a round starting. Nothing from this file is sent anywhere.
 - Windows media sessions, which VibePause uses to play or pause your music. VibePause does not read the titles, artists or content of what is playing.
+- If you set a hotkey, VibePause asks Windows to tell it when that one key combination is pressed, only so it can turn itself on or off. It does not record or read any other keystrokes.
 
 ## Network Use
 

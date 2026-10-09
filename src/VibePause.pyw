@@ -1,4 +1,4 @@
-import os, sys, re, math, time, hashlib, ctypes, threading, queue, json, winreg, urllib.request, urllib.error, tempfile, subprocess
+import os, sys, re, math, time, hashlib, ctypes, threading, queue, json, winreg, urllib.request, urllib.error, tempfile, subprocess, platform
 from pathlib import Path
 import tkinter as tk
 import ctypes.wintypes
@@ -15,7 +15,7 @@ except Exception:
 
 APP_NAME = "VibePause"
 APP_ID = "tanveer-exe.VibePause"
-APP_VERSION = "0.1.4"
+APP_VERSION = "0.1.5"
 UPDATE_REPO = "Tanveer-exe/VibePause"
 UPDATE_ASSET = "VibePause_Setup.exe"
 # Bundled resources: PyInstaller extracts/places them under sys._MEIPASS.
@@ -282,11 +282,52 @@ def version_tuple(value):
         parts.pop()
     return tuple(parts)
 
+NOTES_LIMIT = 900   # characters of release notes shown in the update prompt
+
+def clean_release_notes(body, limit=NOTES_LIMIT):
+    """Turn a GitHub release body (Markdown) into short plain text for a message box."""
+    lines = []
+    for raw in str(body or "").replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        line = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", raw)           # [text](url) -> text
+        line = re.sub(r"\s+by @\S+ in https?://\S+", "", line)           # auto-generated credit suffix
+        line = re.sub(r"\*\*|__|`", "", line).strip()
+        line = re.sub(r"^#{1,6}\s*", "", line)
+        if re.match(r"^(full changelog\b|https?://)", line, re.I):
+            continue
+        if re.match(r"^[-*+]\s+", line):
+            line = "\u2022 " + re.sub(r"^[-*+]\s+", "", line)
+        if line or (lines and lines[-1]):
+            lines.append(line)
+    text = "\n".join(lines).strip()
+    if len(text) > limit:
+        text = text[:limit].rsplit("\n", 1)[0].rstrip() + "\n\u2026 (more on the GitHub release page)"
+    return text
+
+def collect_notes(releases, cur_tuple, limit=NOTES_LIMIT):
+    """Notes for every published release newer than the installed one (newest first, max 3)."""
+    newer = []
+    for rel in releases or []:
+        v = version_tuple(rel.get("tag_name"))
+        if rel.get("draft") or v is None or v <= cur_tuple:
+            continue
+        newer.append((v, rel))
+    newer.sort(key=lambda item: item[0], reverse=True)
+    parts = []
+    for _, rel in newer[:3]:
+        body = clean_release_notes(rel.get("body"), limit)
+        if body:
+            name = str(rel.get("tag_name", "")).lstrip("vV")
+            parts.append(body if len(newer) == 1 else f"{name}:\n{body}")
+    text = "\n\n".join(parts)
+    if len(text) > limit:
+        text = text[:limit].rsplit("\n", 1)[0].rstrip() + "\n\u2026 (more on the GitHub release page)"
+    return text
+
 def pick_update(releases, current_version, asset_name=UPDATE_ASSET):
     """Decide what to do from a GitHub /releases list.
 
     Returns ("current", latest_version_str)
-         or ("update", latest_version_str, download_url, size, digest)
+         or ("update", latest_version_str, download_url, size, digest, release_notes)
     Raises UpdateError if a newer release exists but has no installer.
     Pre-releases are included (the project publishes alpha releases); drafts are not.
     """
@@ -307,7 +348,8 @@ def pick_update(releases, current_version, asset_name=UPDATE_ASSET):
         return ("current", latest)
     for asset in best.get("assets", []) or []:
         if asset.get("name") == asset_name and asset.get("browser_download_url"):
-            return ("update", latest, asset["browser_download_url"], int(asset.get("size") or 0), asset.get("digest") or "")
+            return ("update", latest, asset["browser_download_url"], int(asset.get("size") or 0),
+                    asset.get("digest") or "", collect_notes(releases, cur))
     raise UpdateError(f"VibePause {latest} was published, but its installer ({asset_name}) is missing from the release.")
 
 def fetch_releases(timeout=UPDATE_CHECK_TIMEOUT):
@@ -906,6 +948,118 @@ def round_window(hwnd, width, height, radius):
         pass
 
 
+# ---------------------------------------------------------------------------
+# Optional global hotkey (turns VibePause on/off). Off by default.
+# ---------------------------------------------------------------------------
+HOTKEY_MODS = (("Ctrl", 0x2), ("Alt", 0x1), ("Shift", 0x4))          # RegisterHotKey MOD_* flags
+HOTKEY_NAMED_KEYS = {"Space": 0x20, "Insert": 0x2D, "Delete": 0x2E, "Home": 0x24, "End": 0x23,
+                     "PageUp": 0x21, "PageDown": 0x22, "Left": 0x25, "Up": 0x26, "Right": 0x27, "Down": 0x28}
+TK_KEY_NAMES = {"space": "Space", "Insert": "Insert", "Delete": "Delete", "Home": "Home", "End": "End",
+                "Prior": "PageUp", "Next": "PageDown", "Left": "Left", "Up": "Up", "Right": "Right", "Down": "Down"}
+TK_MODIFIER_KEYSYMS = {"Shift_L", "Shift_R", "Control_L", "Control_R", "Alt_L", "Alt_R", "Caps_Lock",
+                       "Num_Lock", "Win_L", "Win_R", "Super_L", "Super_R", "Meta_L", "Meta_R", "ISO_Level3_Shift"}
+
+
+def hotkey_vk(name):
+    if len(name) == 1 and name.isascii() and name.isalnum():
+        return ord(name.upper())
+    m = re.fullmatch(r"F(\d{1,2})", name)
+    if m and 1 <= int(m.group(1)) <= 24:
+        return 0x70 + int(m.group(1)) - 1
+    return HOTKEY_NAMED_KEYS.get(name)
+
+
+def parse_hotkey(spec):
+    """'Ctrl+Alt+P' -> (modifier flags, virtual key). None if empty or invalid.
+    At least one modifier is required so a plain key can never be taken over system-wide."""
+    parts = [p.strip() for p in str(spec or "").split("+") if p.strip()]
+    if len(parts) < 2:
+        return None
+    flags = dict(HOTKEY_MODS)
+    mods = 0
+    for part in parts[:-1]:
+        if part not in flags:
+            return None
+        mods |= flags[part]
+    vk = hotkey_vk(parts[-1])
+    return (mods, vk) if vk else None
+
+
+def hotkey_from_event(state, keysym):
+    """Tk key event -> (spec, problem). Exactly one of the two is None."""
+    if len(keysym) == 1 and keysym.isascii() and keysym.isalnum():
+        key = keysym.upper()
+    elif keysym in TK_KEY_NAMES:
+        key = TK_KEY_NAMES[keysym]
+    elif re.fullmatch(r"F\d{1,2}", keysym) and hotkey_vk(keysym):
+        key = keysym
+    else:
+        return None, "That key can't be used. Try a letter, number, F-key or arrow key."
+    mods = [name for name, bit in (("Ctrl", 0x4), ("Alt", 0x20000), ("Shift", 0x1)) if state & bit]
+    if not mods:
+        return None, "Also hold Ctrl, Alt or Shift, so normal typing isn't affected."
+    return "+".join(mods + [key]), None
+
+
+class HotkeyListener:
+    """System-wide hotkey. RegisterHotKey has to run on the thread that pumps messages,
+    so every registration gets its own small thread."""
+    WM_HOTKEY, WM_QUIT, MOD_NOREPEAT = 0x0312, 0x0012, 0x4000
+
+    def __init__(self, callback):
+        self.callback = callback
+        self.spec = ""
+        self._thread = None
+        self._tid = 0
+
+    def start(self, spec):
+        """Register spec ('' = no hotkey). False if invalid or already used by another program."""
+        self.stop()
+        if not spec:
+            return True
+        parsed = parse_hotkey(spec)
+        if not parsed or os.name != "nt":
+            return False
+        mods, vk = parsed
+        ready, state = threading.Event(), {}
+
+        def run():
+            msg = ctypes.wintypes.MSG()
+            user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 0)    # make sure this thread has a message queue
+            state["tid"] = ctypes.windll.kernel32.GetCurrentThreadId()
+            state["ok"] = bool(user32.RegisterHotKey(None, 1, mods | self.MOD_NOREPEAT, vk))
+            ready.set()
+            if not state["ok"]:
+                return
+            try:
+                while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
+                    if msg.message == self.WM_HOTKEY:
+                        try:
+                            self.callback()
+                        except Exception:
+                            pass
+            finally:
+                user32.UnregisterHotKey(None, 1)
+
+        thread = threading.Thread(target=run, daemon=True)
+        thread.start()
+        ready.wait(2.0)
+        if not state.get("ok"):
+            return False
+        self._thread, self._tid, self.spec = thread, state["tid"], spec
+        return True
+
+    def stop(self):
+        thread, tid = self._thread, self._tid
+        self._thread, self._tid, self.spec = None, 0, ""
+        if thread and thread.is_alive() and tid:
+            try:
+                user32.PostThreadMessageW(tid, self.WM_QUIT, 0, 0)
+            except Exception:
+                pass
+            thread.join(1.0)
+
+
 class App:
     # Valorant-inspired palette: deep navy, off-white, signature red, teal for "play".
     BG = "#0a0a1c"
@@ -972,6 +1126,8 @@ class App:
         self.running = False
         self.startup = False
         self.close_to_tray = True
+        self.hotkey = ""   # global on/off hotkey; empty = none (default)
+        self.hotkeys = HotkeyListener(lambda: self.event("cmd", "toggle_active"))
         self.settings_open = False
         self.tray_icon = None
         self.tray_popup = None
@@ -1042,6 +1198,8 @@ class App:
                     self.delay = 0
                 self.startup = bool(d.get("startup", False))
                 self.close_to_tray = bool(d.get("close_to_tray", True))
+                saved_hotkey = d.get("hotkey", "")
+                self.hotkey = saved_hotkey if parse_hotkey(saved_hotkey) else ""
 
                 # Handle legacy startup key migration
                 if "legacy_startup_migrated" not in d:
@@ -1074,6 +1232,7 @@ class App:
             "startup": self.startup,
             "close_to_tray": self.close_to_tray,
             "auto_update_enabled": self.auto_update_enabled,
+            "hotkey": self.hotkey,
         })
         data.pop("selected_media_app", None)
         if not write_settings(data):
@@ -1087,6 +1246,8 @@ class App:
 
     def begin_operation(self):
         self.legal_accepted = True
+        if self.hotkey and not self.hotkeys.start(self.hotkey):
+            self.log_line(f"Hotkey {self.hotkey} is used by another program, so it is off")
         self.start_media_watch()
         self.root.after(100, self.start_monitoring)
         if self.auto_update_enabled:
@@ -1665,7 +1826,7 @@ class App:
             self.close_settings()
             return
         self.settings_open = True
-        W, H = 330, 372
+        W, H = 330, 530
         x, y = self.WIN_W - 28 - W, 70
         cache = self.__dict__.setdefault("_settings_cache", {})
         if "base" not in cache:
@@ -1720,20 +1881,82 @@ class App:
         entry.after(50, focus_entry)
         cv.create_text(148, 189, text="milliseconds", fill=self.MUTED, font=self.F(9), anchor="w")
 
-        def button(tag, top, label, command, fill, border, color):
-            w, h = 282, 40
+        def button(tag, top, label, command, fill, border, color, x=24, w=282, h=40, size=10):
             if tag not in cache:
                 cache[tag] = (self.photo(self.gi(w, h, 16, fill=fill, border=border)),
                               self.photo(self.gi(w, h, 16, fill=fill[:3] + (fill[3] + 36,), border=border)))
             normal, hot = cache[tag]
-            bg = cv.create_image(24, top, image=normal, anchor="nw", tags=(tag,))
-            cv.create_text(24 + w // 2, top + h // 2, text=label, fill=color, font=self.F(10, True), tags=(tag,))
+            bg = cv.create_image(x, top, image=normal, anchor="nw", tags=(tag,))
+            txt = cv.create_text(x + w // 2, top + h // 2, text=label, fill=color, font=self.F(size, True), tags=(tag,))
             self.make_clickable(tag, command, lambda on: cv.itemconfig(bg, image=hot if on else normal), cv=cv)
+            return txt
 
-        button("upd", 226, "Check for updates", self.check_for_updates, (255, 255, 255, 18), (255, 255, 255, 50), self.TEXT)
-        self.update_status_item = cv.create_text(24, 280, text=f"VibePause {APP_VERSION}", fill=self.MUTED,
+        # ---- Hotkey (off by default; can always be cleared) ----
+        HK_HINT = "Click the box, then press Ctrl, Alt or Shift plus a key. Applies right away."
+        cv.create_text(24, 234, text="Hotkey: turn VibePause on/off", fill=self.TEXT, font=self.F(10), anchor="w")
+        hk = {"capturing": False}
+
+        def show_hotkey():
+            cv.itemconfig(hk_text, text=self.hotkey or "None", fill=self.TEXT if self.hotkey else self.MUTED)
+
+        def note(message, color=None):
+            cv.itemconfig(hk_hint, text=message, fill=color or self.MUTED)
+
+        def finish_capture():
+            hk["capturing"] = False
+            cv.unbind("<KeyPress>")
+            if self.hotkey and not self.hotkeys.spec:
+                self.hotkeys.start(self.hotkey)
+            show_hotkey()
+
+        def on_key(e):
+            if e.keysym == "Escape":
+                finish_capture()
+                note(HK_HINT)
+                return "break"
+            if e.keysym in TK_MODIFIER_KEYSYMS:
+                return "break"
+            spec, problem = hotkey_from_event(e.state, e.keysym)
+            if problem:
+                note(problem, self.RED)
+                return "break"
+            ok, message = self.set_hotkey(spec)
+            finish_capture()
+            note(message, self.GREEN if ok else self.RED)
+            return "break"
+
+        def start_capture():
+            if hk["capturing"]:
+                return
+            hk["capturing"] = True
+            self.hotkeys.stop()      # so pressing the current combination doesn't toggle VibePause meanwhile
+            cv.itemconfig(hk_text, text="Press keys...", fill=self.BLUE)
+            note("Press the combination now. Esc cancels.")
+            cv.bind("<KeyPress>", on_key)
+            cv.focus_force()
+
+        def clear_hotkey():
+            if hk["capturing"]:
+                hk["capturing"] = False
+                cv.unbind("<KeyPress>")
+            ok, message = self.set_hotkey("")
+            show_hotkey()
+            note(message, self.GREEN)
+
+        hk_text = button("hk", 250, "", start_capture, (255, 255, 255, 14), (255, 255, 255, 44), self.TEXT, x=24, w=190, h=36)
+        button("hkclear", 250, "None", clear_hotkey, (255, 255, 255, 10), (255, 255, 255, 36), self.MUTED, x=222, w=84, h=36)
+        hk_hint = cv.create_text(24, 296, text=HK_HINT, fill=self.MUTED, font=self.F(8), anchor="nw", width=282)
+        show_hotkey()
+
+        # ---- Updates + support ----
+        button("upd", 338, "Check for updates", self.check_for_updates, (255, 255, 255, 18), (255, 255, 255, 50), self.TEXT)
+        self.update_status_item = cv.create_text(24, 392, text=f"VibePause {APP_VERSION}", fill=self.MUTED,
                                                  font=self.F(8), anchor="nw", width=282)
-        button("save", 318, "Save settings", self.save_settings_page, (255, 93, 143, 62), (255, 125, 170, 125), self.RED)
+        button("logdir", 428, "Open log folder", self.open_log_folder, (255, 255, 255, 14), (255, 255, 255, 44),
+               self.TEXT, x=24, w=137, h=36, size=9)
+        button("diag", 428, "Copy diagnostics", self.copy_diagnostics, (255, 255, 255, 14), (255, 255, 255, 44),
+               self.TEXT, x=169, w=137, h=36, size=9)
+        button("save", 474, "Save settings", self.save_settings_page, (255, 93, 143, 62), (255, 125, 170, 125), self.RED)
 
     def check_for_updates(self):
         """Settings > CHECK FOR UPDATES. Runs the network work off the UI thread."""
@@ -1772,17 +1995,14 @@ class App:
             self.log_line(msg)
         elif kind == "available":
             self._update_busy = False
-            _, latest, url, size, digest = value
+            _, latest, url, size, digest, notes = value
             self._set_update_status(f"Update found: VibePause {latest} is available.", self.GREEN)
             self.log_line(f"Update found: {latest} (current {APP_VERSION})")
 
             self.bring_forward()
             answer = messagebox.askyesno(
                 "VibePause Update",
-                f"VibePause {latest} is available.\n\n"
-                f"Current version: {APP_VERSION}\n"
-                f"New version: {latest}\n\n"
-                "Download and install it now?",
+                self.update_prompt_text(latest, notes, "Download and install it now?", show_current=True),
                 parent=self.root)
 
             if answer:
@@ -1848,19 +2068,26 @@ class App:
         try:
             result = pick_update(fetch_releases(), APP_VERSION)
             if result[0] == "update":
-                return True, result[1], result[2], result[3], result[4]
-            return False, result[1], "", 0, ""
+                return True, result[1], result[2], result[3], result[4], result[5]
+            return False, result[1], "", 0, "", ""
         except Exception:
             return None
 
+    def update_prompt_text(self, latest, notes, question, show_current=False):
+        text = f"VibePause {latest} is available."
+        if show_current:
+            text += f"\n\nCurrent version: {APP_VERSION}\nNew version: {latest}"
+        if notes:
+            text += f"\n\nWhat's new:\n{notes}"
+        return text + f"\n\n{question}"
+
     def _show_update_notification(self, version_info):
         """Show update notification when auto-update is enabled"""
-        version, url, size, digest = version_info
+        version, url, size, digest, notes = version_info
         self.bring_forward()
         result = messagebox.askyesno(
             "Update Available",
-            f"VibePause {version} is available!\n\n"
-            "Would you like to download and install it now?",
+            self.update_prompt_text(version, notes, "Would you like to download and install it now?"),
             parent=self.root,
             icon='question'
         )
@@ -2159,6 +2386,74 @@ class App:
         self.settings_open = False
         if hasattr(self, "settings_overlay"):
             self.settings_overlay.destroy()
+        # Capturing a new hotkey pauses the current one; make sure it is back whenever Settings closes.
+        if self.legal_accepted and self.hotkey and not self.hotkeys.spec:
+            self.hotkeys.start(self.hotkey)
+
+    def set_hotkey(self, spec):
+        """Apply and save a new hotkey ('' = none). Returns (ok, message)."""
+        previous = self.hotkey
+        if spec and not self.hotkeys.start(spec):
+            if previous:
+                self.hotkeys.start(previous)    # keep the old one working
+            return False, f"{spec} is already used by another program. Try a different combination."
+        if not spec:
+            self.hotkeys.stop()
+        self.hotkey = spec
+        self.save()
+        return True, (f"Hotkey set to {spec}." if spec else "Hotkey cleared. VibePause has no hotkey.")
+
+    def open_log_folder(self):
+        try:
+            APPDATA.mkdir(parents=True, exist_ok=True)
+            os.startfile(str(APPDATA))
+            self._set_update_status("Opened the VibePause folder (error.log and settings.json).", self.GREEN)
+        except Exception as e:
+            write_error_log(f"Open folder: {type(e).__name__}: {e}")
+            self._set_update_status("Could not open the folder.", self.RED)
+
+    def build_diagnostics(self):
+        """Plain-text report the user can paste into a GitHub issue. Copied to the clipboard only,
+        never sent anywhere. The Windows user name is removed from file paths."""
+        def scrub(text):
+            for home in {os.path.expanduser("~"), os.path.expanduser("~").replace("\\", "/")}:
+                if home and home != "~":
+                    text = re.sub(re.escape(home), "~", text, flags=re.I)
+            return text
+
+        try:
+            error_tail = (APPDATA / "error.log").read_text(encoding="utf-8", errors="replace")[-3000:].strip()
+        except OSError:
+            error_tail = "(no error.log)"
+        lines = [
+            f"VibePause {APP_VERSION} ({'installed build' if getattr(sys, 'frozen', False) else 'running from source'})",
+            f"Windows: {platform.platform()}",
+            f"Display scale: {self.S}",
+            f"VALORANT running: {self.valorant_running}",
+            f"VALORANT log found: {LOG.exists()}",
+            f"VibePause active: {self.active}",
+            f"Event delay: {self.delay} ms | start with Windows: {self.startup} | close to tray: {self.close_to_tray} "
+            f"| auto-update: {self.auto_update_enabled} | hotkey: {self.hotkey or 'none'}",
+            "Actions: " + ", ".join(f"{k}={v}" for k, v in self.actions.items()),
+            "",
+            "Recent activity:",
+            *(self.log_lines[-15:] or ["(none)"]),
+            "",
+            "error.log (last part):",
+            error_tail,
+        ]
+        return scrub("\n".join(lines))
+
+    def copy_diagnostics(self):
+        try:
+            text = self.build_diagnostics()
+            self.root.clipboard_clear()
+            self.root.clipboard_append(text)
+            self.root.update()
+            self._set_update_status("Diagnostics copied. Paste them into your GitHub issue.", self.GREEN)
+        except Exception as e:
+            write_error_log(f"Copy diagnostics: {type(e).__name__}: {e}")
+            self._set_update_status("Could not copy diagnostics.", self.RED)
 
     def reset(self):
         self.actions = DEFAULT_ACTIONS.copy()
@@ -2569,6 +2864,7 @@ class App:
         releaser.start()
         releaser.join(2.5)
         self.stop_auto_update_checker()
+        self.hotkeys.stop()
 
         if self.tray_icon:
             try:
