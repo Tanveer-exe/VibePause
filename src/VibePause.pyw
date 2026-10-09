@@ -647,7 +647,7 @@ def render_aurora(w, h):
     blobs = (
         (0.05, 0.00, 0.50, 0.65, (104, 66, 232, 200)),
         (0.58, -0.05, 0.30, 0.40, (214, 56, 124, 88)),
-        (1.02, 1.02, 0.55, 0.65, (18, 196, 172, 175)),
+        (1.02, 1.05, 0.42, 0.45, (24, 160, 150, 90)),
         (-0.02, 1.00, 0.40, 0.42, (58, 92, 224, 85)),
     )
     for cx, cy, rx, ry, color in blobs:
@@ -1213,7 +1213,7 @@ class App:
         card(self.LEFT_CARD, 26, fill=(255, 255, 255, 16))
         card(self.EVENTS_CARD, 26, fill=(255, 255, 255, 16))
         card(self.MEDIA_CARD, 26, fill=(255, 255, 255, 12))
-        card(self.ACTIVITY_CARD, 26, fill=(40, 210, 190, 30), border=(120, 255, 230, 52))
+        card(self.ACTIVITY_CARD, 26, fill=(8, 8, 26, 120), border=(255, 255, 255, 40))
         tw, th = self.TILE_SIZE
         for i in range(len(EVENTS)):
             x, y = self.tile_origin(i)
@@ -1464,7 +1464,7 @@ class App:
                     else:
                         half = 3
                     self.cv.coords(item, self.bar_x[i], self.bar_y - half, self.bar_x[i], self.bar_y + half)
-            self.root.after(90, self.animate_bars)
+            self.root.after(33, self.animate_bars)
         except tk.TclError:
             pass
 
@@ -1763,57 +1763,104 @@ class App:
         write_settings(d)
 
     def show_legal_popup(self):
-        """Show terms and conditions and privacy policy popup"""
-        W, H = self.sx(640), self.sx(560)
-        legal_window = tk.Toplevel(self.root)
-        legal_window.title("Legal Agreement")
-        legal_window.configure(bg=self.BG)
-        legal_window.resizable(False, False)
-        legal_window.protocol("WM_DELETE_WINDOW", self.complete_exit)
+        W, H = 640, 592
+        pw, ph = self.sx(W), self.sx(H)
+        win = tk.Toplevel(self.root)
+        win.overrideredirect(True)
+        win.configure(bg=self.BG)
+        win.protocol("WM_DELETE_WINDOW", self.complete_exit)
         if self.root.winfo_viewable():
-            legal_window.transient(self.root)
-
-        # Center over the main window (fall back to the screen if it is hidden)
-        legal_window.update_idletasks()
-        if self.root.winfo_viewable():
-            x = self.root.winfo_x() + (self.root.winfo_width() - W) // 2
-            y = self.root.winfo_y() + (self.root.winfo_height() - H) // 2
+            win.transient(self.root)
+            x = self.root.winfo_x() + (self.root.winfo_width() - pw) // 2
+            y = self.root.winfo_y() + (self.root.winfo_height() - ph) // 2
         else:
-            x = (legal_window.winfo_screenwidth() - W) // 2
-            y = (legal_window.winfo_screenheight() - H) // 2
-        legal_window.geometry(f"{W}x{H}+{max(0, x)}+{max(0, y)}")
+            x = (win.winfo_screenwidth() - pw) // 2
+            y = (win.winfo_screenheight() - ph) // 2
+        win.geometry(f"{pw}x{ph}+{max(0, x)}+{max(0, y)}")
 
-        # Layout order matters with pack: the button bar is packed FIRST on the
-        # bottom edge so the text area can never squeeze it out of the window.
-        button_frame = tk.Frame(legal_window, bg=self.BG)
-        button_frame.pack(side="bottom", fill="x", padx=20, pady=(8, 20))
+        CARD = (28, 142, 612, 484)
+        scene = render_aurora(pw, ph)
+        scene.alpha_composite(self.gi(CARD[2] - CARD[0], CARD[3] - CARD[1], 22, fill=(16, 16, 40, 255),
+                                      border=(255, 255, 255, 50), sheen=0), (self.sx(CARD[0]), self.sx(CARD[1])))
+        scene_photo = self.photo(scene.convert("RGB"))
+        cv = ScaledCanvas(win, self.S, width=pw, height=ph, bg=self.BG, bd=0, highlightthickness=0)
+        cv.pack()
+        cv.create_image(0, 0, image=scene_photo, anchor="nw")
 
-        tab_frame = tk.Frame(legal_window, bg=self.BG)
-        tab_frame.pack(side="top", fill="x", padx=20, pady=(20, 10))
+        logo = self.img("vibepause_logo_32")
+        if logo:
+            cv.create_image(28, 40, image=logo, anchor="w")
+        cv.create_text(72, 32, text="Before you start", fill=self.TEXT, font=self.F(15, True), anchor="w")
+        cv.create_text(72, 56, text="Read both documents to the end to unlock I Agree.", fill=self.MUTED,
+                       font=self.F(9), anchor="w")
 
-        content_frame = tk.Frame(legal_window, bg="#0d0d24")
-        content_frame.pack(side="top", fill="both", expand=True, padx=20)
+        def press(e):
+            win._drag = (e.x_root - win.winfo_x(), e.y_root - win.winfo_y()) if e.y < self.sx(84) else None
 
-        scrollbar = tk.Scrollbar(content_frame, orient="vertical", relief="flat", bd=0)
-        scrollbar.pack(side="right", fill="y")
+        def drag(e):
+            if win._drag:
+                win.geometry(f"+{e.x_root - win._drag[0]}+{e.y_root - win._drag[1]}")
 
-        # ONE text widget that is re-filled on every tab switch. (Destroying and
-        # re-creating the container is what left the tabs blank before.)
-        text_widget = tk.Text(content_frame, bg="#0d0d24", fg="#c8c6e6",
-                              insertbackground="white", relief="flat", bd=0,
-                              highlightthickness=0, font=self.F(10), wrap="word",
-                              padx=14, pady=12, spacing1=2, spacing3=4,
-                              yscrollcommand=scrollbar.set, cursor="arrow")
-        text_widget.pack(side="left", fill="both", expand=True)
-        scrollbar.config(command=text_widget.yview)
+        win._drag = None
+        cv.bind("<ButtonPress-1>", press)
+        cv.bind("<B1-Motion>", drag)
 
-        text_widget.tag_configure("h1", font=self.F(15, True), foreground="#ece8e1",
-                                  spacing1=4, spacing3=10)
-        text_widget.tag_configure("h2", font=self.F(12, True), foreground="#ece8e1",
-                                  spacing1=14, spacing3=4)
-        text_widget.tag_configure("h3", font=self.F(10, True), foreground="#ece8e1",
-                                  spacing1=10, spacing3=2)
+        docs = {
+            "terms": ("TERMS_AND_CONDITIONS.md", "Terms and Conditions"),
+            "privacy": ("PRIVACY_POLICY.md", "Privacy Policy"),
+        }
+        read = {"terms": False, "privacy": False}
+        current = {"doc": "terms"}
+
+        TX, TY, TW, TH = CARD[0] + 14, CARD[1] + 12, 540, CARD[3] - CARD[1] - 24
+        text_widget = tk.Text(cv, bg="#101028", fg="#c8c6e6", insertbackground="white", relief="flat", bd=0,
+                              highlightthickness=0, font=self.F(10), wrap="word", padx=8, pady=6,
+                              spacing1=2, spacing3=4, cursor="arrow", takefocus=False)
+        cv.create_window(TX, TY, window=text_widget, anchor="nw", width=TW, height=TH)
+        text_widget.tag_configure("h1", font=self.F(15, True), foreground="#f1efff", spacing1=4, spacing3=10)
+        text_widget.tag_configure("h2", font=self.F(12, True), foreground="#f1efff", spacing1=14, spacing3=4)
+        text_widget.tag_configure("h3", font=self.F(10, True), foreground="#f1efff", spacing1=10, spacing3=2)
         text_widget.tag_configure("bullet", lmargin1=14, lmargin2=28)
+
+        track_x, track_y0, track_y1 = CARD[2] - 16, TY + 6, TY + TH - 6
+        cv.create_line(track_x, track_y0, track_x, track_y1, width=4, capstyle="round", fill="#24244a", tags=("sb",))
+        thumb = cv.create_line(track_x, track_y0, track_x, track_y1, width=4, capstyle="round", fill="#6f6d98", tags=("sb",))
+
+        def tab_state():
+            for key, item in tab_items.items():
+                cv.itemconfig(item["bg"], image=tab_on if key == current["doc"] else tab_off)
+                cv.itemconfig(item["text"], fill=self.TEXT if key == current["doc"] else self.MUTED)
+                cv.itemconfig(item["tick"], text="✓" if read[key] else "")
+
+        def refresh_ready():
+            ok = all(read.values())
+            cv.itemconfig(agree_bg, image=agree_on if ok else agree_off)
+            cv.itemconfig(agree_text, fill=self.RED if ok else self.FAINT)
+            if ok:
+                cv.itemconfig(hint, text="Thanks. You can accept now.", fill=self.GREEN)
+            else:
+                left = [docs[k][1] for k, v in read.items() if not v]
+                cv.itemconfig(hint, text="Still to read: " + " and ".join(left), fill=self.MUTED)
+
+        def on_scroll(first, last):
+            first, last = float(first), float(last)
+            span = track_y1 - track_y0
+            y0 = track_y0 + first * span
+            y1 = max(y0 + 28, track_y0 + last * span)
+            cv.coords(thumb, track_x, y0, track_x, min(y1, track_y1))
+            if last >= 0.995 and not read[current["doc"]]:
+                read[current["doc"]] = True
+                tab_state()
+                refresh_ready()
+
+        text_widget.config(yscrollcommand=on_scroll)
+
+        def drag_bar(e):
+            frac = (e.y / self.S - track_y0) / (track_y1 - track_y0)
+            text_widget.yview_moveto(max(0.0, min(1.0, frac - 0.08)))
+
+        cv.tag_bind("sb", "<Button-1>", drag_bar)
+        cv.tag_bind("sb", "<B1-Motion>", drag_bar)
 
         def read_doc(filename, title):
             try:
@@ -1841,57 +1888,70 @@ class App:
                 else:
                     text_widget.insert("end", line + "\n")
 
-        docs = {
-            "terms": ("TERMS_AND_CONDITIONS.md", "Terms and Conditions"),
-            "privacy": ("PRIVACY_POLICY.md", "Privacy Policy"),
-        }
-        tabs = {}
-
         def show_doc(which):
+            current["doc"] = which
             filename, title = docs[which]
-            for key, label in tabs.items():
-                active = key == which
-                label.config(bg=self.PANEL2 if active else self.PANEL,
-                             fg=self.TEXT if active else self.MUTED)
             text_widget.config(state="normal")
             text_widget.delete("1.0", "end")
             render_markdown(read_doc(filename, title))
             text_widget.config(state="disabled")
             text_widget.yview_moveto(0)
+            tab_state()
+            win.after(60, lambda: on_scroll(*text_widget.yview()))
 
-        for key, caption in (("terms", "Terms and Conditions"), ("privacy", "Privacy Policy")):
-            label = tk.Label(tab_frame, text=caption, bg=self.PANEL, fg=self.MUTED,
-                             font=self.F(10, True), padx=20, pady=10, cursor="hand2")
-            label.pack(side="left", padx=(0, 8))
-            label.bind("<Button-1>", lambda e, k=key: show_doc(k))
-            tabs[key] = label
+        tab_on = self.photo(self.gi(268, 36, 18, fill=(255, 255, 255, 40), border=(255, 255, 255, 90)))
+        tab_off = self.photo(self.gi(268, 36, 18, fill=(255, 255, 255, 12), border=(255, 255, 255, 36)))
+        tab_items = {}
+        for i, key in enumerate(("terms", "privacy")):
+            left = 28 + i * 280
+            tag = f"tab_{key}"
+            bg = cv.create_image(left, 92, image=tab_off, anchor="nw", tags=(tag,))
+            text = cv.create_text(left + 134, 110, text=docs[key][1], font=self.F(10, True), tags=(tag,))
+            tick = cv.create_text(left + 248, 110, text="", fill=self.GREEN, font=self.F(11, True), tags=(tag,))
+            tab_items[key] = {"bg": bg, "text": text, "tick": tick}
+            self.make_clickable(tag, lambda k=key: show_doc(k), cv=cv)
 
-        show_doc("terms")
+        hint = cv.create_text(28, 506, text="", font=self.F(9), anchor="w")
+
+        def button(tag, left, label, width, fill, border):
+            normal = self.photo(self.gi(width, 44, 18, fill=fill, border=border))
+            bg = cv.create_image(left, 528, image=normal, anchor="nw", tags=(tag,))
+            text = cv.create_text(left + width // 2, 550, text=label, font=self.F(11, True), tags=(tag,))
+            return normal, bg, text
+
+        exit_img, exit_bg, exit_text = button("decline", 28, "Exit", 130, (255, 255, 255, 14), (255, 255, 255, 44))
+        cv.itemconfig(exit_text, fill=self.MUTED)
+        self.make_clickable("decline", self.complete_exit, cv=cv)
+
+        agree_off, agree_bg, agree_text = button("agree", 612 - 200, "I Agree", 200, (255, 255, 255, 10), (255, 255, 255, 30))
+        agree_on = self.photo(self.gi(200, 44, 18, fill=(255, 93, 143, 70), border=(255, 125, 170, 135)))
 
         def accept_legal():
+            if not all(read.values()):
+                return
             self.save_legal_acceptance()
             try:
-                legal_window.grab_release()
+                win.grab_release()
             except tk.TclError:
                 pass
-            legal_window.destroy()
+            win.destroy()
             self.begin_operation()
 
-        accept_btn = tk.Button(button_frame, text="I Agree", command=accept_legal,
-                               bg=self.RED, fg="white", activebackground="#ff6a77",
-                               activeforeground="white", relief="flat", bd=0,
-                               font=self.F(11, True), padx=40, pady=12, cursor="hand2")
-        accept_btn.pack(side="right")
+        self.make_clickable("agree", accept_legal, cv=cv)
+        show_doc("terms")
+        refresh_ready()
+        cv.photos = [scene_photo]
 
         def finish_setup():
             try:
-                legal_window.lift()
-                legal_window.grab_set()  # Modal behavior
-                accept_btn.focus_set()
+                round_window(user32.GetParent(win.winfo_id()) or win.winfo_id(), pw, ph, self.sx(12)) if os.name == "nt" else None
+                win.lift()
+                win.grab_set()
+                win.focus_force()
             except tk.TclError:
                 pass
 
-        legal_window.after(100, finish_setup)
+        win.after(100, finish_setup)
 
     def close_settings(self):
         self.settings_open = False
