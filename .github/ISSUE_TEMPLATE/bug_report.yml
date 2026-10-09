@@ -1,0 +1,56 @@
+name: Bug report
+description: Something in VibePause is not working
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve VibePause. In VibePause, **Settings > Copy diagnostics** copies most of what is asked below. Please paste it in the last box.
+  - type: input
+    id: version
+    attributes:
+      label: VibePause version
+      description: Shown in Settings, under Check for updates.
+      placeholder: "0.1.5"
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: "Windows 11 23H2"
+    validations:
+      required: true
+  - type: dropdown
+    id: media
+    attributes:
+      label: Media app you were using
+      options:
+        - Spotify
+        - Apple Music
+        - YouTube Music
+        - Chrome or another browser
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start VibePause
+        2. Start VALORANT
+        3. ...
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Paste the result of Settings > Copy diagnostics. It does not include your Windows user name.
+      render: text
