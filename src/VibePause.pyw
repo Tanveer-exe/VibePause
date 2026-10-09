@@ -200,7 +200,7 @@ def write_error_log(text, cooldown=ERROR_LOG_COOLDOWN):
         APPDATA.mkdir(parents=True, exist_ok=True)
         path = APPDATA / "error.log"
         if path.exists() and path.stat().st_size > 200000:
-            path.unlink()
+            path.replace(APPDATA / "error.old.log")
         with open(path, "a", encoding="utf-8") as fh:
             fh.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {APP_VERSION}\n{note}{text}\n\n")
     except OSError:
@@ -247,7 +247,7 @@ def list_processes():
 def valorant_running():
     procs = list_processes()
     if procs is None:
-        return True
+        return None
     return any(name in VALORANT_PROCESSES for _, name in procs)
 
 
@@ -418,23 +418,46 @@ async def _get_manager():
         _manager_cache = await _SessionManager.request_async()
     return _manager_cache
 
+_paused_ids = set()
+
 async def _gsmtc_set(desired):
     mgr = await _get_manager()
     sessions = [s for s in mgr.get_sessions() if not is_call_app(_session_id(s))]
     if not sessions:
         return None
 
+    targets = sessions
+    if desired:
+        targets = [s for s in sessions if _session_id(s) in _paused_ids]
+        if not targets:
+            try:
+                current = mgr.get_current_session()
+            except Exception:
+                current = None
+            targets = [current] if current is not None and not is_call_app(_session_id(current)) else sessions
+
     async def one(session):
+        sid = _session_id(session)
         try:
             playing = session.get_playback_info().playback_status == _PlaybackStatus.PLAYING
-            if desired and not playing:
-                await session.try_play_async()
-            elif not desired and playing:
-                await session.try_pause_async()
+            if desired:
+                _paused_ids.discard(sid)
+                if playing:
+                    return None
+                return bool(await session.try_play_async())
+            if not playing:
+                return None
+            ok = bool(await session.try_pause_async())
+            if ok:
+                _paused_ids.add(sid)
+            return ok
         except Exception:
-            pass
+            return False
 
-    await asyncio.gather(*(one(s) for s in sessions))
+    results = await asyncio.gather(*(one(s) for s in targets))
+    attempted = [r for r in results if r is not None]
+    if attempted and not any(attempted):
+        return "failed"
     return desired
 
 
@@ -482,6 +505,7 @@ class Controller:
         self.last_event_time = 0.0
         self.paused_by_us = False
         self.resume_pos = None
+        self.action_generation = 0
         self.lock = threading.Lock()
 
     def toggle_media(self):
@@ -496,6 +520,9 @@ class Controller:
                     result = MEDIA.run(_gsmtc_set(desired))
                     if result is None:
                         self.ui.event("system", "No active Windows media session")
+                        return False
+                    if result == "failed":
+                        self.ui.event("system", "The media app did not respond")
                         return False
                     self.music_playing = desired
                     if desired:
@@ -529,17 +556,21 @@ class Controller:
         if action == "None":
             return
         desired = action == "Play"
+        self.action_generation += 1
+        generation = self.action_generation
         if delay:
-            threading.Thread(target=self.apply_later, args=(desired, delay, stop_event), daemon=True).start()
+            threading.Thread(target=self.apply_later, args=(desired, delay, stop_event, generation), daemon=True).start()
             return
         self.commit_action(desired, stop_event)
 
-    def apply_later(self, desired, delay, stop_event):
+    def apply_later(self, desired, delay, stop_event, generation):
         if stop_event is not None:
             if stop_event.wait(delay / 1000):
                 return
         else:
             time.sleep(delay / 1000)
+        if generation != self.action_generation:
+            return
         if not self.ui.active or not self.game_running:
             return
         self.commit_action(desired, stop_event)
@@ -591,6 +622,7 @@ class Controller:
         self.round_started_at = 0.0
         self.player_dead = False
         self.buy_announced = False
+        self.last_event = None
 
     def log_replaced(self, f):
         try:
@@ -610,6 +642,8 @@ class Controller:
             return
         self.last_process_check = now
         running = valorant_running()
+        if running is None:
+            return
         if running != self.game_running:
             self.game_running = running
             self.ui.event("valorant", running)
@@ -654,7 +688,7 @@ class Controller:
                 pass
         else:
             self.reset_match_state()
-        self.game_running = valorant_running()
+        self.game_running = bool(valorant_running())
         self.last_process_check = time.monotonic()
         self.ui.event("valorant", self.game_running)
 
@@ -667,6 +701,7 @@ class Controller:
                     f.close()
                     partial = ""
                     self.resume_pos = None
+                    self.reset_match_state()
                     f = self.follow(stop_event, False)
                     if not f:
                         return
@@ -786,8 +821,7 @@ class Controller:
             # another Gameplay-started line.
             if any(x in low for x in (
                 "ashootergamestate::onroundended",
-                "logshootergamestate: onroundended",
-                "onroundended"
+                "logshootergamestate: onroundended"
             )):
                 self.round_active = False
                 self.player_dead = False
@@ -950,13 +984,17 @@ async def _gsmtc_status():
     sessions = [s for s in mgr.get_sessions() if not is_call_app(_session_id(s))]
     if not sessions:
         return "none"
+    paused = False
     for session in sessions:
         try:
-            if session.get_playback_info().playback_status == _PlaybackStatus.PLAYING:
-                return "playing"
+            status = session.get_playback_info().playback_status
         except Exception:
             continue
-    return "paused"
+        if status == _PlaybackStatus.PLAYING:
+            return "playing"
+        if status == _PlaybackStatus.PAUSED:
+            paused = True
+    return "paused" if paused else "none"
 
 
 def media_status():
@@ -1071,6 +1109,9 @@ class HotkeyListener:
             ready.set()
             if not state["ok"]:
                 return
+            if state.get("abandon"):
+                user32.UnregisterHotKey(None, 1)
+                return
             try:
                 while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
                     if msg.message == self.WM_HOTKEY:
@@ -1083,7 +1124,9 @@ class HotkeyListener:
 
         thread = threading.Thread(target=run, daemon=True)
         thread.start()
-        ready.wait(2.0)
+        if not ready.wait(2.0):
+            state["abandon"] = True
+            return False
         if not state.get("ok"):
             return False
         self._thread, self._tid, self.spec = thread, state["tid"], spec
@@ -1240,24 +1283,6 @@ class App:
                 self.close_to_tray = bool(d.get("close_to_tray", True))
                 saved_hotkey = d.get("hotkey", "")
                 self.hotkey = saved_hotkey if parse_hotkey(saved_hotkey) else ""
-
-                # Handle legacy startup key migration
-                if "legacy_startup_migrated" not in d:
-                    # Try to read startup setting from registry and migrate to config
-                    try:
-                        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, STARTUP_KEY, 0, winreg.KEY_READ)
-                        value, _ = winreg.QueryValueEx(key, STARTUP_NAME)
-                        winreg.CloseKey(key)
-                        # If we found a startup setting, sync it with config
-                        if self.startup:  # Only update if not already set from config
-                            pass  # Startup setting will be handled by save() when needed
-                    except FileNotFoundError:
-                        pass  # No legacy startup setting
-                    except Exception:
-                        pass
-                    # Mark that we've checked for legacy startup
-                    d["legacy_startup_migrated"] = True
-                    write_settings(d)
         except Exception:
             pass
 
