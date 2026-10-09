@@ -476,6 +476,8 @@ class Controller:
         self.character_select_seen = False
         self.round_active = False
         self.round_started_at = 0.0
+        self.player_dead = False
+        self.buy_announced = False
         self.last_event = None
         self.last_event_time = 0.0
         self.paused_by_us = False
@@ -587,6 +589,8 @@ class Controller:
         self.character_select_seen = False
         self.round_active = False
         self.round_started_at = 0.0
+        self.player_dead = False
+        self.buy_announced = False
 
     def log_replaced(self, f):
         try:
@@ -750,7 +754,9 @@ class Controller:
             # Buy/shop phase. This can happen in later rounds too.
             if "opening wbp_screen_preroundshopcontainer_c" in low:
                 self.in_match = True
-                self.apply_action("Buy Phase Started", stop_event=stop_event)
+                if not self.buy_announced:
+                    self.buy_announced = True
+                    self.apply_action("Buy Phase Started", stop_event=stop_event)
                 continue
 
             # Round/combat starts. If the game-start transition was missed,
@@ -761,6 +767,16 @@ class Controller:
                     self.in_match = True
                     self.game_started = True
                     self.apply_action("Match Started", stop_event=stop_event)
+                match = re.search(r"gameplay started at local time ([0-9.]+)", low)
+                local_time = float(match.group(1)) if match else 30.0
+                self.player_dead = False
+                if local_time < 15.0:
+                    self.round_active = False
+                    if not self.buy_announced:
+                        self.buy_announced = True
+                        self.apply_action("Buy Phase Started", stop_event=stop_event)
+                    continue
+                self.buy_announced = False
                 self.round_active = True
                 self.round_started_at = time.monotonic()
                 self.apply_action("Combat Start", stop_event=stop_event)
@@ -774,6 +790,26 @@ class Controller:
                 "onroundended"
             )):
                 self.round_active = False
+                self.player_dead = False
+                self.buy_announced = False
+                continue
+
+            # The local player's pawn changes when they die: the game switches them to an
+            # "<Agent>_PostDeath_PC_C" pawn, and back to the normal pawn on a revive or the
+            # next round. Only the local player controller logs this.
+            if "clientrestart_implementation" in low and "acknowledgepawn(" in low:
+                ack = re.search(r"acknowledgepawn\('([^']*)'", low)
+                prev = re.search(r"prevpawn\('([^']*)'", low)
+                ack_dead = bool(ack and "_postdeath_" in ack.group(1))
+                prev_dead = bool(prev and "_postdeath_" in prev.group(1))
+                if ack_dead and not self.player_dead:
+                    self.player_dead = True
+                    self.round_active = False
+                    self.apply_action("Player Eliminated", stop_event=stop_event)
+                elif prev_dead and not ack_dead and self.player_dead:
+                    self.player_dead = False
+                    self.round_active = True
+                    self.apply_action("Ultimate Used", stop_event=stop_event)
                 continue
 
             # Death detection. Recent VALORANT logs can expose the local
