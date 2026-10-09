@@ -874,7 +874,8 @@ class App:
         except Exception:
             pass
         fams = set(tkfont.families(self.root))
-        self.fam = next((f for f in ("Segoe UI Variable Display", "Segoe UI", "Bahnschrift") if f in fams), "Segoe UI")
+        self.fam = next((f for f in ("Segoe UI Variable Display", "Segoe UI", "Bahnschrift") if f in fams),
+                        tkfont.nametofont("TkDefaultFont").actual("family"))
         self.assets = {}
         self.load_assets()
 
@@ -1694,6 +1695,7 @@ class App:
             self._set_update_status(f"Update found: VibePause {latest} is available.", self.GREEN)
             self.log_line(f"Update found: {latest} (current {APP_VERSION})")
 
+            self.bring_forward()
             answer = messagebox.askyesno(
                 "VibePause Update",
                 f"VibePause {latest} is available.\n\n"
@@ -1717,6 +1719,13 @@ class App:
             self._update_busy = False
             self._set_update_status(value[1], self.RED)
             self.log_line(value[1])
+
+    def bring_forward(self):
+        try:
+            if not self.root.winfo_viewable():
+                self._show()
+        except tk.TclError:
+            pass
 
     def background_update_checker(self, stop):
         """Background thread for periodic update checks"""
@@ -1760,6 +1769,7 @@ class App:
     def _show_update_notification(self, version_info):
         """Show update notification when auto-update is enabled"""
         version, url, size, digest = version_info
+        self.bring_forward()
         result = messagebox.askyesno(
             "Update Available",
             f"VibePause {version} is available!\n\n"
@@ -1818,8 +1828,10 @@ class App:
     def _launch_update(self, path, latest):
         try:
             self.log_line(f"Starting the VibePause {latest} installer")
-            DETACHED_PROCESS, CREATE_NEW_PROCESS_GROUP = 0x00000008, 0x00000200
-            subprocess.Popen([path, "/UPDATE"], close_fds=True, creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)
+            CREATE_NEW_PROCESS_GROUP = 0x00000200
+            CREATE_NO_WINDOW = 0x08000000
+            subprocess.Popen(f'ping -n 4 127.0.0.1 >nul & "{path}" /UPDATE', shell=True, close_fds=True,
+                             creationflags=CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP)
             self.complete_exit()   # stop monitoring, remove tray icon, quit so the installer can replace files
         except Exception as e:
             self._update_busy = False
