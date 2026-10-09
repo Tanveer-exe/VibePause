@@ -1,0 +1,19 @@
+name: Feature request
+description: Suggest an idea for VibePause
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like VibePause to do?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why would it help?
+      description: What are you trying to do that is hard or impossible today?
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Anything you have tried instead?
