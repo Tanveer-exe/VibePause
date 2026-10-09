@@ -96,20 +96,51 @@ def open_log(path):
     return os.fdopen(msvcrt.open_osfhandle(handle, os.O_RDONLY), "r", encoding="utf-8", errors="ignore")
 
 
+def _parse_settings_bytes(raw):
+    """Decode and parse settings leniently. Returns a dict, or None if it is truly unreadable.
+    Tolerates a UTF-8 BOM, UTF-16 / ANSI files written by other tools, NUL padding, and
+    stray text after the JSON object."""
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+        encodings = ("utf-16",)
+    else:
+        encodings = ("utf-8-sig", "cp1252")
+    for enc in encodings:
+        try:
+            text = raw.decode(enc).replace("\x00", "").strip()
+        except UnicodeDecodeError:
+            continue
+        try:
+            data, _ = json.JSONDecoder().raw_decode(text)
+        except ValueError:
+            continue
+        return data if isinstance(data, dict) else None
+    return None
+
+
 def read_settings():
     try:
         if not CONFIG.exists():
             return {}
-        data = json.loads(CONFIG.read_text(encoding="utf-8"))
-    except ValueError:
-        try:
-            CONFIG.replace(CONFIG.with_name("settings.json.bad"))
-        except OSError:
-            pass
-        return {}
+        raw = CONFIG.read_bytes()
     except OSError:
         return {}
-    return data if isinstance(data, dict) else {}
+    data = _parse_settings_bytes(raw)
+    if data is not None:
+        return data
+    if not raw.strip():
+        return {}
+    # Genuinely unreadable. Keep a copy for recovery without overwriting an earlier backup, and
+    # record why, so settings never vanish silently.
+    try:
+        bad = CONFIG.with_name("settings.json.bad")
+        if bad.exists():
+            bad = CONFIG.with_name(f"settings.json.{time.strftime('%Y%m%d-%H%M%S')}.bad")
+        CONFIG.replace(bad)
+        write_error_log(f"settings.json could not be read and was moved to {bad.name} "
+                        f"({len(raw)} bytes, starts with {raw[:12]!r}). Defaults were loaded.")
+    except OSError:
+        pass
+    return {}
 
 
 def write_settings(data):

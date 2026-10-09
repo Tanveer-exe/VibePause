@@ -1,6 +1,6 @@
 # Terms and Conditions for VibePause
 
-Last updated: October 6, 2026
+Last updated: October 9, 2026
 
 Please read these Terms and Conditions ("Terms", "Terms and Conditions") carefully before using the VibePause application (the "Service") operated by tanveer-exe ("us", "we", or "our").
 
@@ -10,7 +10,17 @@ By accessing or using the Service you agree to be bound by these Terms. If you d
 
 ## Intellectual Property
 
-The Service and its original content, features and functionality are and will remain the exclusive property of tanveer-exe and its licensors. The Service is protected by copyright, trademark, and other laws of both the United States and foreign countries. Our trademarks and trade dress may not be used in connection with any product or service without the prior written consent of tanveer-exe.
+VibePause is free and open-source software. Its source code is licensed under the GNU General Public License v3.0 (GPL-3.0). You may use, study, modify and redistribute it under the terms of that license, a copy of which is included in the project's LICENSE file. Nothing in these Terms limits the rights that license gives you.
+
+The author, tanveer-exe, keeps the copyright in the original code, as is normal for open-source projects, and the GPL-3.0 license is what grants you permission to use it. The VibePause name and logo are not covered by that license. Please do not use them to suggest that a modified version is the official VibePause.
+
+Third-party components used by VibePause keep their own licenses, which are listed in THIRD_PARTY_NOTICES.
+
+## Not Affiliated With Riot Games
+
+VibePause is an independent community project. It is not affiliated with, endorsed by, or sponsored by Riot Games or VALORANT, and it is not associated with any third-party media application. VALORANT and Riot Games are trademarks of Riot Games, Inc.
+
+VibePause does not modify VALORANT or send gameplay input. However, VALORANT and Windows may change at any time, and compatibility is not guaranteed. tanveer-exe is not responsible for any account action, restriction, suspension, ban, compatibility issue, data loss, or other consequence resulting from your use of VibePause.
 
 ## Links To Other Web Sites
 
@@ -22,7 +32,7 @@ tanveer-exe has no control over, and assumes no responsibility for, the content,
 
 We may terminate or suspend access to our Service immediately, without prior notice or liability, for any reason whatsoever, including without limitation if you breach the Terms.
 
-All provisions of the Terms which by their nature should survive termination shall survive termination, including, without limitation, ownership provisions, warranty disclaimers, indemnity and limitations of liability.
+All provisions of the Terms which by their nature should survive termination shall survive termination, including, without limitation, ownership provisions, warranty disclaimers and limitations of liability.
 
 ## Limitation Of Liability
 
@@ -36,7 +46,7 @@ tanveer-exe its subsidiaries, affiliates, and its licensors do not warrant that 
 
 ## Governing Law
 
-These Terms shall be governed and construed in accordance with the laws of the United States, without regard to its conflict of law provisions.
+These Terms shall be governed and construed in accordance with the laws of India, without regard to its conflict of law provisions.
 
 Our failure to enforce any right or provision of these Terms will not be considered a waiver of those rights. If any provision of these Terms is held to be invalid or unenforceable by a court, the remaining provisions of these Terms will remain in effect. These Terms constitute the entire agreement between us concerning our Service, and supersede and replace any prior agreements we might have had between us concerning the Service.
 
@@ -48,4 +58,4 @@ By continuing to access or use our Service after any revisions become effective,
 
 ## Contact Us
 
-If you have any questions about these Terms, please contact us.
+If you have any questions about these Terms, please open an issue at https://github.com/Tanveer-exe/VibePause/issues.

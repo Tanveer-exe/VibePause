@@ -1,6 +1,6 @@
 # Privacy Policy for VibePause
 
-Last updated: October 6, 2026
+Last updated: October 9, 2026
 
 tanveer-exe ("us", "we", or "our") operates the VibePause application (the "Service").
 
@@ -15,7 +15,8 @@ VibePause runs on your computer. It does not collect, store or sell personal dat
 - Your name, email address, phone number or address
 - Your Riot Games account details, passwords or authentication tokens
 - Game memory, screenshots or gameplay input
-- Usage statistics, analytics or crash reports
+- Usage statistics or analytics
+- Crash reports. VibePause never sends them anywhere (see the error log below)
 - Any information about the music or media you play
 
 ## Data Stored On Your Computer
@@ -23,6 +24,8 @@ VibePause runs on your computer. It does not collect, store or sell personal dat
 VibePause saves your settings in a file named settings.json in the Documents\VibePause folder. This file contains your chosen actions for each game event, the event delay, your startup and tray preferences, update check preference, and which version of the legal terms you accepted.
 
 This file stays on your computer. It is never uploaded. Uninstalling VibePause keeps this file so your settings survive a reinstall. You can delete the folder yourself at any time.
+
+If something goes wrong, VibePause may also write technical error details (such as an error message and the app version) to a file named error.log in the same folder. This file helps you report a problem if you choose to, but it stays on your computer and is never uploaded or sent automatically.
 
 ## What VibePause Reads
 
