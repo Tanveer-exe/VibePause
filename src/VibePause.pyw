@@ -1587,7 +1587,7 @@ class App:
         x, y = self.WIN_W - 28 - W, 70
         cache = self.__dict__.setdefault("_settings_cache", {})
         if "base" not in cache:
-            crop = self.scene_img.crop((self.sx(x), self.sx(y), self.sx(x + W), self.sx(y + H))).convert("RGBA")
+            crop = self.scene_img.crop((self.sx(x), self.sx(y), self.sx(x) + self.sx(W), self.sx(y) + self.sx(H))).convert("RGBA")
             blurred = crop.filter(ImageFilter.GaussianBlur(self.sx(8)))
             mask = rounded_mask((self.sx(W), self.sx(H)), self.sx(26))
             base = Image.composite(blurred, crop, mask)
