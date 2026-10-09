@@ -324,6 +324,7 @@ class Controller:
         self.last_event = None
         self.last_event_time = 0.0
         self.paused_by_us = False
+        self.resume_pos = None
         self.lock = threading.Lock()
 
     def toggle_media(self):
@@ -370,17 +371,25 @@ class Controller:
         self.ui.event("event", (event, action))
         if action == "None":
             return
+        desired = action == "Play"
         if delay:
-            if stop_event is not None:
-                if stop_event.wait(delay / 1000):
-                    return
-            else:
-                time.sleep(delay / 1000)
-            if not self.ui.active or not self.game_running:
+            threading.Thread(target=self.apply_later, args=(desired, delay, stop_event), daemon=True).start()
+            return
+        self.commit_action(desired, stop_event)
+
+    def apply_later(self, desired, delay, stop_event):
+        if stop_event is not None:
+            if stop_event.wait(delay / 1000):
                 return
+        else:
+            time.sleep(delay / 1000)
+        if not self.ui.active or not self.game_running:
+            return
+        self.commit_action(desired, stop_event)
+
+    def commit_action(self, desired, stop_event):
         if stop_event is not None and stop_event.is_set():
             return
-        desired = action == "Play"
         if self.set_playing(desired):
             self.paused_by_us = not desired
             self.ui.event("music", "Playing" if desired else "Paused")
@@ -451,11 +460,13 @@ class Controller:
                     self.ui.event("music", "Playing")
 
     def run(self, stop_event):
+        resume = False
         while not stop_event.is_set():
             holder = []
             try:
-                self.monitor(stop_event, holder)
+                self.monitor(stop_event, holder, resume)
             except Exception as e:
+                resume = True
                 close_quietly(holder)
                 self.ui.event("system", f"Monitor error, restarting: {type(e).__name__}: {e}")
                 if stop_event.wait(2):
@@ -464,13 +475,20 @@ class Controller:
             close_quietly(holder)
             return
 
-    def monitor(self, stop_event, holder):
-        f = self.follow(stop_event, True)
+    def monitor(self, stop_event, holder, resume=False):
+        f = self.follow(stop_event, not resume)
         if not f:
             return
         holder[:] = [f]
 
-        self.reset_match_state()
+        if resume and self.resume_pos is not None:
+            try:
+                if os.fstat(f.fileno()).st_size >= self.resume_pos:
+                    f.seek(self.resume_pos)
+            except OSError:
+                pass
+        else:
+            self.reset_match_state()
         self.game_running = valorant_running()
         self.last_process_check = time.monotonic()
         self.ui.event("valorant", self.game_running)
@@ -483,6 +501,7 @@ class Controller:
                 if self.log_replaced(f):
                     f.close()
                     partial = ""
+                    self.resume_pos = None
                     f = self.follow(stop_event, False)
                     if not f:
                         return
@@ -490,6 +509,7 @@ class Controller:
                 stop_event.wait(.08)
                 continue
 
+            self.resume_pos = f.tell()
             partial += chunk
             if not partial.endswith("\n") and len(partial) < 65536:
                 continue
@@ -1464,6 +1484,11 @@ class App:
                     else:
                         half = 3
                     self.cv.coords(item, self.bar_x[i], self.bar_y - half, self.bar_x[i], self.bar_y + half)
+        except tk.TclError:
+            return
+        except Exception:
+            pass
+        try:
             self.root.after(33, self.animate_bars)
         except tk.TclError:
             pass
@@ -1489,8 +1514,8 @@ class App:
             return
         last = None
         while True:
-            state = media_status()
-            if state is not None and state != last:
+            state = media_status() or "unknown"
+            if state != last:
                 last = state
                 self.event("media", state)
             time.sleep(3)
@@ -1623,9 +1648,9 @@ class App:
             self._set_update_status(value[1], self.RED)
             self.log_line(value[1])
 
-    def background_update_checker(self):
+    def background_update_checker(self, stop):
         """Background thread for periodic update checks"""
-        while getattr(self, '_auto_update_running', False):
+        while not stop.is_set():
             try:
                 current_time = time.time()
                 if current_time - self.last_update_check >= UPDATE_CHECK_INTERVAL:
@@ -1636,6 +1661,8 @@ class App:
                     elif result[0]:
                         self._pending_update = result[1:]
 
+                if stop.is_set():
+                    break
                 pending = getattr(self, "_pending_update", None)
                 if (pending and pending[0] != self.declined_update and not self.valorant_running
                         and not getattr(self, "_update_busy", False)):
@@ -1643,11 +1670,11 @@ class App:
                     self.event("update_prompt", pending)
 
                 # Wait interruptibly so shutdown wakes the checker immediately.
-                if self._auto_update_stop.wait(60):
+                if stop.wait(60):
                     break
             except Exception as e:
                 print(f"Background update check error: {e}")
-                if self._auto_update_stop.wait(60):
+                if stop.wait(60):
                     break
 
     def _silent_check_for_updates(self):
@@ -1733,11 +1760,10 @@ class App:
             return
         if not getattr(self, '_auto_update_running', False):
             self._auto_update_running = True
-            if not hasattr(self, "_auto_update_stop"):
-                self._auto_update_stop = threading.Event()
-            self._auto_update_stop.clear()
+            self._auto_update_stop = threading.Event()
             self.auto_update_thread = threading.Thread(
                 target=self.background_update_checker,
+                args=(self._auto_update_stop,),
                 daemon=True
             )
             self.auto_update_thread.start()
