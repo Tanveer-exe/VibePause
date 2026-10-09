@@ -5,7 +5,7 @@
 [Setup]
 AppId={{D5B8B6B7-7B61-4D1D-9D73-3A1B9A0D1E42}
 AppName={#MyAppName}
-AppVersion=0.1.4
+AppVersion=0.1.5
 AppPublisher={#MyAppPublisher}
 DefaultDirName={localappdata}\Programs\VibePause
 DefaultGroupName=VibePause
