@@ -290,13 +290,21 @@ def _session_id(session):
     except Exception:
         return ""
 
+_manager_cache = None
+
+async def _get_manager():
+    global _manager_cache
+    if _manager_cache is None:
+        _manager_cache = await _SessionManager.request_async()
+    return _manager_cache
+
 async def _gsmtc_set(desired):
-    mgr = await _SessionManager.request_async()
+    mgr = await _get_manager()
     sessions = [s for s in mgr.get_sessions() if not is_call_app(_session_id(s))]
     if not sessions:
         return None
 
-    for session in sessions:
+    async def one(session):
         try:
             playing = session.get_playback_info().playback_status == _PlaybackStatus.PLAYING
             if desired and not playing:
@@ -304,9 +312,36 @@ async def _gsmtc_set(desired):
             elif not desired and playing:
                 await session.try_pause_async()
         except Exception:
-            continue
+            pass
 
+    await asyncio.gather(*(one(s) for s in sessions))
     return desired
+
+
+class MediaLoop:
+    def __init__(self):
+        self.loop = None
+        self.guard = threading.Lock()
+
+    def start(self):
+        with self.guard:
+            if self.loop is not None:
+                return
+            loop = asyncio.new_event_loop()
+            threading.Thread(target=loop.run_forever, daemon=True).start()
+            self.loop = loop
+
+    def run(self, coro, timeout=8):
+        global _manager_cache
+        self.start()
+        try:
+            return asyncio.run_coroutine_threadsafe(coro, self.loop).result(timeout)
+        except Exception:
+            _manager_cache = None
+            raise
+
+
+MEDIA = MediaLoop()
 
 class Controller:
     def __init__(self, ui):
@@ -336,7 +371,7 @@ class Controller:
         with self.lock:
             if GSMTC_AVAILABLE:
                 try:
-                    result = asyncio.run(_gsmtc_set(desired))
+                    result = MEDIA.run(_gsmtc_set(desired))
                     if result is None:
                         self.ui.event("system", "No active Windows media session")
                         return False
@@ -749,7 +784,7 @@ class ScaledCanvas(tk.Canvas):
 
 
 async def _gsmtc_status():
-    mgr = await _SessionManager.request_async()
+    mgr = await _get_manager()
     sessions = [s for s in mgr.get_sessions() if not is_call_app(_session_id(s))]
     if not sessions:
         return "none"
@@ -766,7 +801,7 @@ def media_status():
     if not GSMTC_AVAILABLE:
         return None
     try:
-        return asyncio.run(_gsmtc_status())
+        return MEDIA.run(_gsmtc_status())
     except Exception:
         return None
 
