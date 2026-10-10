@@ -3106,7 +3106,7 @@ class App:
         def watch():
             while True:
                 if kernel32.WaitForSingleObject(handle, 500) == 0:   # WAIT_OBJECT_0: another copy asked us to quit
-                    self.event("cmd", "exit")
+                    self.event("cmd", "quit")
                     return
 
         threading.Thread(target=watch, daemon=True).start()
@@ -3324,7 +3324,7 @@ class App:
 
         row(0, tr("Active"), lambda: self.set_active_from_tray(not self.active), with_switch=True)
         row(1, tr("Open VibePause"), self._show)
-        row(2, tr("Exit VibePause"), self.complete_exit)
+        row(2, tr("Exit VibePause"), self.confirm_exit)
         cv.photos = photos
 
         state = {"entered": False, "outside": 0, "age": 0}
@@ -3380,7 +3380,9 @@ class App:
         elif cmd == "toggle_active":
             self.set_active_from_tray(not self.active)
         elif cmd == "exit":
-            self.complete_exit()
+            self.confirm_exit()          # asked for by the person (tray menu)
+        elif cmd == "quit":
+            self.complete_exit()         # asked for by a second copy or the installer: no question
 
     def hide_window(self):
         self.root.withdraw()   # removes the taskbar button and Alt+Tab entry; tray icon stays
@@ -3421,7 +3423,78 @@ class App:
         if self.close_to_tray and TRAY_AVAILABLE:
             self.hide_window()
         else:
+            self.confirm_exit()
+
+    def confirm_exit(self):
+        """Ask "are you sure?" before quitting. Hiding to the tray never asks, and neither does a
+        second copy or the installer asking this one to quit (that uses complete_exit directly)."""
+        existing = getattr(self, "_quit_win", None)
+        if existing is not None:
+            try:
+                if existing.winfo_exists():
+                    existing.deiconify()
+                    existing.lift()
+                    existing.focus_force()
+                    return
+            except tk.TclError:
+                pass
+        W, H = 440, 230
+        pw, ph = self.sx(W), self.sx(H)
+        win = tk.Toplevel(self.root)
+        self._quit_win = win
+        win.overrideredirect(True)
+        win.configure(bg=self.BG)
+        win.attributes("-topmost", True)
+        if self.root.winfo_viewable():
+            win.transient(self.root)
+            x = self.root.winfo_x() + (self.root.winfo_width() - pw) // 2
+            y = self.root.winfo_y() + (self.root.winfo_height() - ph) // 2
+        else:
+            x = (win.winfo_screenwidth() - pw) // 2
+            y = (win.winfo_screenheight() - ph) // 2
+        win.geometry(f"{pw}x{ph}+{max(0, x)}+{max(0, y)}")
+
+        scene = render_aurora(pw, ph)
+        scene.alpha_composite(self.gi(W - 24, H - 24, 22, fill=(16, 16, 40, 235), border=(255, 255, 255, 50), sheen=10),
+                              (self.sx(12), self.sx(12)))
+        scene_photo = self.photo(scene.convert("RGB"))
+        cv = ScaledCanvas(win, self.S, width=pw, height=ph, bg=self.BG, bd=0, highlightthickness=0)
+        cv.pack()
+        cv.create_image(0, 0, image=scene_photo, anchor="nw")
+        cv.photos = [scene_photo]
+        logo = self.img("vibepause_logo_32")
+        if logo:
+            cv.create_image(36, 52, image=logo, anchor="w")
+        cv.create_text(80, 52, text=tr("Quit VibePause?"), fill=self.TEXT, font=self.F(15, True), anchor="w")
+        cv.create_text(36, 98, text=tr("VibePause will stop controlling your music until you open it again."),
+                       fill=self.MUTED, font=self.F(10), anchor="nw", width=W - 72)
+
+        def close_dialog():
+            self._quit_win = None
+            try:
+                win.destroy()
+            except tk.TclError:
+                pass
+
+        def quit_now():
+            close_dialog()
             self.complete_exit()
+
+        def make_button(tag, left, label, fill, border, color, command):
+            bw, bh, top = 176, 44, H - 76
+            normal = self.photo(self.gi(bw, bh, 18, fill=fill, border=border))
+            hot = self.photo(self.gi(bw, bh, 18, fill=fill[:3] + (min(255, fill[3] + 36),), border=border))
+            bg = cv.create_image(left, top, image=normal, anchor="nw", tags=(tag,))
+            cv.create_text(left + bw // 2, top + bh // 2, text=label, fill=color, font=self.F(11, True), tags=(tag,))
+            self.make_clickable(tag, command, lambda on: cv.itemconfig(bg, image=hot if on else normal), cv=cv)
+
+        make_button("quit_cancel", 36, tr("Cancel"), (255, 255, 255, 14), (255, 255, 255, 44), self.TEXT, close_dialog)
+        make_button("quit_ok", W - 36 - 176, tr("Quit"), (255, 93, 143, 62), (255, 125, 170, 125), self.RED, quit_now)
+        win.bind("<Escape>", lambda e: close_dialog())
+        win.bind("<Return>", lambda e: quit_now())
+        win.protocol("WM_DELETE_WINDOW", close_dialog)
+        win.lift()
+        win.after(30, win.focus_force)
 
     def complete_exit(self):
         # Shutdown must be fast and must never wait on network I/O from the UI.
