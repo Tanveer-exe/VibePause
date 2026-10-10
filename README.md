@@ -75,6 +75,15 @@ Each event can be configured independently as:
 
 You can also reset all events to their default settings.
 
+### Pause mode and Volume mode
+
+A switch at the top of the **Music behaviour** card changes how events control your music:
+
+- **Pause** (default): each event plays, pauses, or does nothing, as above.
+- **Volume**: each event sets a volume from 0% (silent) to 100% with a slider. Click the percentage to leave an event unchanged. The music keeps playing and only its volume changes.
+
+Volume mode changes the same per-app volume you see in the Windows volume mixer. It never changes VALORANT, Riot software, voice chat or call apps, and it puts volumes back when you switch to Pause mode or exit VibePause.
+
 ### Supported media
 
 VibePause works with **Windows media apps that support Windows' standard media controls**.
@@ -107,6 +116,7 @@ When enabled, VibePause launches in the system tray and runs in the background.
 
 VibePause provides settings for:
 
+- Language (English, Español, Português (Brasil), Français, Deutsch, Italiano, Polski, Türkçe, Русский, 日本語, 한국어, 简体中文, 繁體中文, Bahasa Indonesia, Tiếng Việt)
 - Event delay
 - Close button behavior
 - Start with Windows
@@ -115,6 +125,8 @@ VibePause provides settings for:
 - Open log folder and Copy diagnostics buttons, to make bug reports easier
 
 Settings are saved locally.
+
+**Translations:** the translations are machine-made and have not been checked by native speakers, so some wording may be off. Each language is a small file in `src/lang` (for example `fr.json`), and corrections are welcome as pull requests. Any text missing from a file is shown in English. The Terms and Privacy Policy are shown in English only.
 
 ### Updates
 

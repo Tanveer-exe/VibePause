@@ -8,6 +8,8 @@ Keep each section short. The heading must match the version number, for example 
 - New: an optional hotkey to turn VibePause on or off (off by default, and you can clear it any time)
 - New: Settings has Open log folder and Copy diagnostics buttons to make bug reports easier
 - New: the update prompt now shows what's new
+- New: Volume mode. Switch from Pause to Volume and each event gets a volume slider instead of Play/Pause
+- New: 15 languages for VALORANT's biggest regions, chosen in Settings (translations are machine-made, corrections welcome)
 - Fixed: dying in a match is now detected, so Player Eliminated works
 - Fixed: the music no longer pauses for a moment when the buy phase opens
 - Fixed: Play only resumes the music app VibePause paused, not every app that was open
