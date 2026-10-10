@@ -83,10 +83,17 @@ jobs:
       - name: Install Inno Setup
         shell: pwsh
         run: |
-          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          if (!(Test-Path $iscc)) {
-            choco install innosetup --yes --no-progress
+          # The dark installer window needs Inno Setup 6.6 or newer. The runner image may ship an
+          # older 6.x, so upgrade (this also installs it if missing). If the upgrade fails, the
+          # installed version still builds the installer, just with the light style.
+          choco upgrade innosetup --yes --no-progress
+          if ($LASTEXITCODE -ne 0) {
+            Write-Warning "Could not upgrade Inno Setup; using the installed version."
+            $global:LASTEXITCODE = 0
           }
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $iscc)) { throw "ISCC.exe not found at $iscc" }
+          Write-Host "Inno Setup version: $((Get-Item $iscc).VersionInfo.ProductVersion)"
 
       - name: Build installer
         shell: pwsh
