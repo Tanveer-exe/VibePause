@@ -63,5 +63,9 @@
   "Privacy Policy": "Kebijakan Privasi",
   "Open VibePause": "Buka VibePause",
   "Exit VibePause": "Keluar dari VibePause",
-  "Volume mode: drag to set each event's volume. Click the percentage to leave an event unchanged.": "Mode volume: geser untuk mengatur volume tiap peristiwa. Klik persentase untuk membiarkannya tanpa perubahan."
+  "Volume mode: drag to set each event's volume. Click the percentage to leave an event unchanged.": "Mode volume: geser untuk mengatur volume tiap peristiwa. Klik persentase untuk membiarkannya tanpa perubahan.",
+  "Quit VibePause?": "Keluar dari VibePause?",
+  "VibePause will stop controlling your music until you open it again.": "VibePause akan berhenti mengontrol musikmu sampai kamu membukanya lagi.",
+  "Cancel": "Batal",
+  "Quit": "Keluar"
 }

@@ -63,5 +63,9 @@
   "Privacy Policy": "Datenschutzerklärung",
   "Open VibePause": "VibePause öffnen",
   "Exit VibePause": "VibePause beenden",
-  "Volume mode: drag to set each event's volume. Click the percentage to leave an event unchanged.": "Lautstärkemodus: Ziehe, um die Lautstärke jedes Ereignisses festzulegen. Klicke auf den Prozentwert, um es unverändert zu lassen."
+  "Volume mode: drag to set each event's volume. Click the percentage to leave an event unchanged.": "Lautstärkemodus: Ziehe, um die Lautstärke jedes Ereignisses festzulegen. Klicke auf den Prozentwert, um es unverändert zu lassen.",
+  "Quit VibePause?": "VibePause beenden?",
+  "VibePause will stop controlling your music until you open it again.": "VibePause steuert deine Musik nicht mehr, bis du es wieder öffnest.",
+  "Cancel": "Abbrechen",
+  "Quit": "Beenden"
 }

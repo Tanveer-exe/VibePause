@@ -64,5 +64,9 @@
   "Privacy Policy": "隐私政策",
   "Open VibePause": "打开 VibePause",
   "Exit VibePause": "退出 VibePause",
-  "Volume mode: drag to set each event's volume. Click the percentage to leave an event unchanged.": "音量模式：拖动滑块设置各事件的音量。点击百分比可不更改。"
+  "Volume mode: drag to set each event's volume. Click the percentage to leave an event unchanged.": "音量模式：拖动滑块设置各事件的音量。点击百分比可不更改。",
+  "Quit VibePause?": "退出 VibePause？",
+  "VibePause will stop controlling your music until you open it again.": "在你再次打开 VibePause 之前，它将不再控制音乐。",
+  "Cancel": "取消",
+  "Quit": "退出"
 }

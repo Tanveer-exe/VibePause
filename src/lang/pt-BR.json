@@ -63,5 +63,9 @@
   "Privacy Policy": "Política de Privacidade",
   "Open VibePause": "Abrir o VibePause",
   "Exit VibePause": "Sair do VibePause",
-  "Volume mode: drag to set each event's volume. Click the percentage to leave an event unchanged.": "Modo volume: arraste para definir o volume de cada evento. Clique na porcentagem para não alterar."
+  "Volume mode: drag to set each event's volume. Click the percentage to leave an event unchanged.": "Modo volume: arraste para definir o volume de cada evento. Clique na porcentagem para não alterar.",
+  "Quit VibePause?": "Sair do VibePause?",
+  "VibePause will stop controlling your music until you open it again.": "O VibePause vai parar de controlar sua música até você abri-lo novamente.",
+  "Cancel": "Cancelar",
+  "Quit": "Sair"
 }

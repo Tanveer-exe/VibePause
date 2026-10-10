@@ -64,5 +64,9 @@
   "Privacy Policy": "개인정보 처리방침",
   "Open VibePause": "VibePause 열기",
   "Exit VibePause": "VibePause 종료",
-  "Volume mode: drag to set each event's volume. Click the percentage to leave an event unchanged.": "볼륨 모드: 슬라이더로 이벤트별 볼륨을 설정하세요. 퍼센트를 클릭하면 변경하지 않습니다."
+  "Volume mode: drag to set each event's volume. Click the percentage to leave an event unchanged.": "볼륨 모드: 슬라이더로 이벤트별 볼륨을 설정하세요. 퍼센트를 클릭하면 변경하지 않습니다.",
+  "Quit VibePause?": "VibePause를 종료할까요?",
+  "VibePause will stop controlling your music until you open it again.": "VibePause를 다시 열 때까지 음악 제어가 중지됩니다.",
+  "Cancel": "취소",
+  "Quit": "종료"
 }

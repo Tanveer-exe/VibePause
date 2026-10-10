@@ -64,5 +64,9 @@
   "Privacy Policy": "プライバシーポリシー",
   "Open VibePause": "VibePauseを開く",
   "Exit VibePause": "VibePauseを終了",
-  "Volume mode: drag to set each event's volume. Click the percentage to leave an event unchanged.": "音量モード：スライダーで各イベントの音量を設定します。割合をクリックすると変更しません。"
+  "Volume mode: drag to set each event's volume. Click the percentage to leave an event unchanged.": "音量モード：スライダーで各イベントの音量を設定します。割合をクリックすると変更しません。",
+  "Quit VibePause?": "VibePauseを終了しますか？",
+  "VibePause will stop controlling your music until you open it again.": "VibePauseを再度開くまで、音楽の制御は停止します。",
+  "Cancel": "キャンセル",
+  "Quit": "終了"
 }

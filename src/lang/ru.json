@@ -64,5 +64,9 @@
   "Privacy Policy": "Политика конфиденциальности",
   "Open VibePause": "Открыть VibePause",
   "Exit VibePause": "Выйти из VibePause",
-  "Volume mode: drag to set each event's volume. Click the percentage to leave an event unchanged.": "Режим громкости: перетащите ползунок, чтобы задать громкость для каждого события. Нажмите на процент, чтобы не менять."
+  "Volume mode: drag to set each event's volume. Click the percentage to leave an event unchanged.": "Режим громкости: перетащите ползунок, чтобы задать громкость для каждого события. Нажмите на процент, чтобы не менять.",
+  "Quit VibePause?": "Выйти из VibePause?",
+  "VibePause will stop controlling your music until you open it again.": "VibePause перестанет управлять музыкой, пока вы снова его не откроете.",
+  "Cancel": "Отмена",
+  "Quit": "Выйти"
 }

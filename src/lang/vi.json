@@ -64,5 +64,9 @@
   "Privacy Policy": "Chính sách quyền riêng tư",
   "Open VibePause": "Mở VibePause",
   "Exit VibePause": "Thoát VibePause",
-  "Volume mode: drag to set each event's volume. Click the percentage to leave an event unchanged.": "Chế độ âm lượng: kéo để đặt âm lượng cho từng sự kiện. Nhấp vào phần trăm để giữ nguyên."
+  "Volume mode: drag to set each event's volume. Click the percentage to leave an event unchanged.": "Chế độ âm lượng: kéo để đặt âm lượng cho từng sự kiện. Nhấp vào phần trăm để giữ nguyên.",
+  "Quit VibePause?": "Thoát VibePause?",
+  "VibePause will stop controlling your music until you open it again.": "VibePause sẽ ngừng điều khiển nhạc của bạn cho đến khi bạn mở lại.",
+  "Cancel": "Hủy",
+  "Quit": "Thoát"
 }

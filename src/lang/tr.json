@@ -64,5 +64,9 @@
   "Privacy Policy": "Gizlilik Politikası",
   "Open VibePause": "VibePause'u aç",
   "Exit VibePause": "VibePause'dan çık",
-  "Volume mode: drag to set each event's volume. Click the percentage to leave an event unchanged.": "Ses modu: her olayın sesini ayarlamak için sürükleyin. Değiştirmemek için yüzdeye tıklayın."
+  "Volume mode: drag to set each event's volume. Click the percentage to leave an event unchanged.": "Ses modu: her olayın sesini ayarlamak için sürükleyin. Değiştirmemek için yüzdeye tıklayın.",
+  "Quit VibePause?": "VibePause'dan çıkılsın mı?",
+  "VibePause will stop controlling your music until you open it again.": "VibePause'u yeniden açana kadar müziğinizi kontrol etmeyecek.",
+  "Cancel": "İptal",
+  "Quit": "Çık"
 }
