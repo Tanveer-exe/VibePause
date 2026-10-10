@@ -14,6 +14,7 @@ Keep each section short. The heading must match the version number, for example 
 - Fixed: a delayed action could fire after a newer event and flip the music the wrong way
 - Fixed: if a match ended during the buy phase, the next match's first buy phase was missed
 - Fixed: after a failed Play, VibePause could resume the wrong app next time
+- Changed: the installer now has the same dark look as the app, with a welcome screen and rounded buttons
 - Changed: settings.json is now saved read-only so it is not edited by accident, and saved values are checked when loaded
 - Fixed: the extra blue strip on the right and bottom of the window
 - Fixed: the Terms screen could hide behind other windows and leave the app stuck
