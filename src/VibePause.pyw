@@ -477,10 +477,13 @@ async def _gsmtc_set(desired):
         try:
             playing = session.get_playback_info().playback_status == _PlaybackStatus.PLAYING
             if desired:
-                _paused_ids.discard(sid)
                 if playing:
+                    _paused_ids.discard(sid)
                     return None
-                return bool(await session.try_play_async())
+                ok = bool(await session.try_play_async())
+                if ok:
+                    _paused_ids.discard(sid)
+                return ok
             if not playing:
                 return None
             ok = bool(await session.try_pause_async())
@@ -773,6 +776,8 @@ class Controller:
                 self.character_select_seen = False
                 self.round_active = False
                 self.round_started_at = 0.0
+                self.player_dead = False
+                self.buy_announced = False
                 if was_in_match:
                     self.apply_action("Match Ended", stop_event=stop_event)
                 self.apply_action("Returned to Lobby", stop_event=stop_event)
@@ -790,6 +795,8 @@ class Controller:
                 self.character_select_seen = False
                 self.round_active = False
                 self.round_started_at = 0.0
+                self.player_dead = False
+                self.buy_announced = False
                 if was_in_match:
                     self.apply_action("Match Ended", stop_event=stop_event)
                 continue
@@ -805,6 +812,8 @@ class Controller:
                     self.game_started = False
                     self.round_active = False
                     self.round_started_at = 0.0
+                    self.player_dead = False
+                    self.buy_announced = False
                     self.character_select_seen = True
                     self.apply_action("Agent Selection", stop_event=stop_event)
                 continue
