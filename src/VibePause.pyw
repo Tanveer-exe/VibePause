@@ -1,4 +1,4 @@
-import os, sys, re, math, time, hashlib, ctypes, threading, queue, json, winreg, urllib.request, urllib.error, tempfile, subprocess, platform
+import os, sys, re, math, time, hashlib, ctypes, threading, queue, json, winreg, urllib.request, urllib.error, tempfile, subprocess, platform, stat
 from pathlib import Path
 import tkinter as tk
 import ctypes.wintypes
@@ -160,8 +160,42 @@ def read_settings():
     return {}
 
 
+MAX_DELAY_MS = 99999
+
+
+def clean_delay(value):
+    try:
+        number = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+    return max(0, min(MAX_DELAY_MS, number))
+
+
+def clean_bool(value, default):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in ("true", "1", "yes", "on"):
+            return True
+        if text in ("false", "0", "no", "off"):
+            return False
+    return default
+
+
+def set_settings_writable(writable):
+    try:
+        if CONFIG.exists():
+            os.chmod(CONFIG, stat.S_IREAD | stat.S_IWRITE if writable else stat.S_IREAD)
+    except OSError:
+        pass
+
+
 def write_settings(data):
     tmp = CONFIG.with_name("settings.json.tmp")
+    set_settings_writable(True)
     try:
         APPDATA.mkdir(parents=True, exist_ok=True)
         tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -173,6 +207,8 @@ def write_settings(data):
         except OSError:
             pass
         return False
+    finally:
+        set_settings_writable(False)
 
 
 ERROR_LOG_COOLDOWN = 6 * 60 * 60  # an identical error is written at most once per 6 hours
@@ -1271,16 +1307,16 @@ class App:
             # Load settings from current location
             d = read_settings()
             if d:
+                saved_actions = d.get("actions")
+                if not isinstance(saved_actions, dict):
+                    saved_actions = {}
                 for k in self.actions:
-                    val = d.get("actions", {}).get(k)
+                    val = saved_actions.get(k)
                     if val in ("Play", "Pause", "None"):
                         self.actions[k] = val
-                try:
-                    self.delay = max(0, int(d.get("delay", 0)))
-                except (TypeError, ValueError):
-                    self.delay = 0
-                self.startup = bool(d.get("startup", False))
-                self.close_to_tray = bool(d.get("close_to_tray", True))
+                self.delay = clean_delay(d.get("delay", 0))
+                self.startup = clean_bool(d.get("startup"), False)
+                self.close_to_tray = clean_bool(d.get("close_to_tray"), True)
                 saved_hotkey = d.get("hotkey", "")
                 self.hotkey = saved_hotkey if parse_hotkey(saved_hotkey) else ""
         except Exception:
@@ -1391,7 +1427,7 @@ class App:
 
     def load_auto_update_settings(self):
         """Load auto-update enabled setting from config"""
-        self.auto_update_enabled = bool(read_settings().get("auto_update_enabled", True))
+        self.auto_update_enabled = clean_bool(read_settings().get("auto_update_enabled"), True)
 
     def load_assets(self):
         if not self.asset_dir.exists():
@@ -1940,7 +1976,7 @@ class App:
 
         cv.create_text(24, 154, text="Event delay", fill=self.TEXT, font=self.F(10), anchor="w")
         self.delay_settings = tk.StringVar(value=str(self.delay))
-        vcmd = (self.root.register(lambda v: v == "" or (v.isdigit() and len(v) <= 6)), "%P")
+        vcmd = (self.root.register(lambda v: v == "" or (v.isdigit() and len(v) <= 5)), "%P")
         entry = tk.Entry(cv, textvariable=self.delay_settings, width=9, bg=self.PANEL2, fg=self.TEXT,
                          insertbackground="white", relief="flat", bd=0, validate="key", validatecommand=vcmd,
                          selectbackground="#2f6fd6", selectforeground="white", font=self.F(11),
@@ -2549,10 +2585,7 @@ class App:
         self.log_line("Reset to default")
 
     def save_settings_page(self):
-        try:
-            self.delay = max(0, int(self.delay_settings.get()))
-        except Exception:
-            self.delay = 0
+        self.delay = clean_delay(self.delay_settings.get())
         self.save()
         self.log_line("Settings saved")
         self.close_settings()
