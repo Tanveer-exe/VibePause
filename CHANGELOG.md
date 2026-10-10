@@ -9,7 +9,7 @@ Keep each section short. The heading must match the version number, for example 
 - New: Settings has Open log folder and Copy diagnostics buttons to make bug reports easier
 - New: the update prompt now shows what's new
 - New: Volume mode. Switch from Pause to Volume and each event gets a volume slider instead of Play/Pause
-- New: 15 languages for VALORANT's biggest regions. You pick one on first start and can change it in Settings (translations are machine-made, corrections welcome)
+- New: You pick one on first start and can change it in Settings (translations are machine-made, corrections welcome)
 - Fixed: dying in a match is now detected, so Player Eliminated works
 - New: closing VibePause for real (the X button with Close to Tray off, or Exit in the tray) now asks "Quit VibePause?" first
 - Fixed: Ultimate Used no longer triggers when a teammate or enemy is revived, only when you are
@@ -18,10 +18,5 @@ Keep each section short. The heading must match the version number, for example 
 - Fixed: a delayed action could fire after a newer event and flip the music the wrong way
 - Fixed: if a match ended during the buy phase, the next match's first buy phase was missed
 - Fixed: after a failed Play, VibePause could resume the wrong app next time
-- Changed: the installer now has the same dark look as the app, with a welcome screen and rounded buttons
-- Changed: settings.json is now saved read-only so it is not edited by accident, and saved values are checked when loaded
-- Fixed: the extra blue strip on the right and bottom of the window
 - Fixed: the Terms screen could hide behind other windows and leave the app stuck
-- Fixed: settings files are read more reliably
 - Fixed: repeated errors no longer flood the log file or Live activity
-- Updated the Terms and Privacy Policy. You will be asked to accept them once
