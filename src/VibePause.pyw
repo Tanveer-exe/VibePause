@@ -86,55 +86,6 @@ DEFAULT_ACTIONS = {
     "Ultimate Used": "Play",
 }
 
-# ---------------------------------------------------------------------------
-# Volume mode and translations
-# ---------------------------------------------------------------------------
-MODE_PAUSE, MODE_VOLUME = "pause", "volume"
-# Volume mode mirrors the pause-mode defaults: quiet while a round is live, full volume otherwise.
-DEFAULT_VOLUMES = {name: (20 if DEFAULT_ACTIONS[name] == "Pause" else 100) for name, _ in EVENTS}
-
-
-def clean_volume(value, default):
-    """0-100, or None meaning 'leave the volume alone for this event'."""
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        return default
-    try:
-        return max(0, min(100, int(value)))
-    except (TypeError, ValueError, OverflowError):
-        return default
-
-
-# (code, name shown in the language menu). Each non-English language is a plain JSON file in
-# the "lang" folder; any text missing from a file simply stays in English.
-LANGUAGES = (
-    ("en", "English"), ("es", "Español"), ("pt-BR", "Português (Brasil)"), ("fr", "Français"),
-    ("de", "Deutsch"), ("it", "Italiano"), ("pl", "Polski"), ("tr", "Türkçe"), ("ru", "Русский"),
-    ("ja", "日本語"), ("ko", "한국어"), ("zh-CN", "简体中文"), ("zh-TW", "繁體中文"),
-    ("id", "Bahasa Indonesia"), ("vi", "Tiếng Việt"),
-)
-LANG_CODES = {code for code, _ in LANGUAGES}
-_translations = {}
-
-
-def set_language(code):
-    global _translations
-    _translations = {}
-    if code and code != "en" and code in LANG_CODES:
-        try:
-            data = json.loads((RESOURCE_DIR / "lang" / f"{code}.json").read_text(encoding="utf-8-sig"))
-            if isinstance(data, dict):
-                _translations = {str(k): v for k, v in data.items() if isinstance(v, str) and v}
-        except (OSError, ValueError):
-            _translations = {}
-
-
-def tr(text):
-    """Translate a UI string into the chosen language (English text is the lookup key)."""
-    return _translations.get(text, text)
-
-
 # These are the four apps intentionally shown in the UI.
 MEDIA_APPS = ["Google Chrome", "YouTube Music", "Apple Music", "Spotify"]
 
@@ -574,96 +525,6 @@ class MediaLoop:
 
 MEDIA = MediaLoop()
 
-# ---------------------------------------------------------------------------
-# Per-app volume (volume mode). Uses the same per-app volume Windows shows in its volume mixer.
-# All Core Audio calls run on one dedicated thread so COM is initialised exactly once.
-# ---------------------------------------------------------------------------
-try:
-    import importlib.util
-    AUDIO_AVAILABLE = os.name == "nt" and importlib.util.find_spec("pycaw") is not None
-except Exception:
-    AUDIO_AVAILABLE = False
-
-AUDIO_SKIP_PROCESSES = VALORANT_PROCESSES + ("vibepause.exe",)
-AUDIO_SKIP_PREFIXES = ("riot", "valorant", "vanguard", "vgc")
-_volume_baseline = {}   # process id -> the app's volume before VibePause first changed it
-
-
-def audio_skip(name):
-    """Never touch the game itself, Riot/Vanguard, voice chat or call apps, or VibePause."""
-    n = (name or "").lower()
-    return (not n or n in AUDIO_SKIP_PROCESSES or n.startswith(AUDIO_SKIP_PREFIXES)
-            or any(k in n for k in CALL_APP_KEYWORDS))
-
-
-def _audio_sessions():
-    from pycaw.pycaw import AudioUtilities
-    names = {pid: str(name).lower() for pid, name in (list_processes() or [])}
-    for session in AudioUtilities.GetAllSessions():
-        pid = session.ProcessId
-        if pid and not audio_skip(names.get(pid, "")):
-            yield pid, session.SimpleAudioVolume
-
-
-def set_app_volume(level):
-    """Set the volume (0.0-1.0) of every music/media app. Returns how many apps were changed."""
-    changed = 0
-    for pid, volume in _audio_sessions():
-        if pid not in _volume_baseline:
-            _volume_baseline[pid] = volume.GetMasterVolume()
-        volume.SetMasterVolume(level, None)
-        changed += 1
-    return changed
-
-
-def restore_app_volume():
-    """Put back the volume each app had before VibePause changed it."""
-    for pid, volume in _audio_sessions():
-        if pid in _volume_baseline:
-            volume.SetMasterVolume(_volume_baseline[pid], None)
-    _volume_baseline.clear()
-
-
-class AudioWorker:
-    def __init__(self):
-        self.q = queue.Queue()
-        self.thread = None
-        self.guard = threading.Lock()
-
-    def _start(self):
-        with self.guard:
-            if self.thread is None:
-                self.thread = threading.Thread(target=self._run, daemon=True)
-                self.thread.start()
-
-    def _run(self):
-        try:
-            import comtypes
-            comtypes.CoInitialize()
-        except Exception:
-            pass
-        while True:
-            fn, args, box, done = self.q.get()
-            try:
-                box["result"] = fn(*args)
-            except Exception as e:
-                box["error"] = e
-            finally:
-                done.set()
-
-    def call(self, fn, *args, timeout=8):
-        self._start()
-        box, done = {}, threading.Event()
-        self.q.put((fn, args, box, done))
-        if not done.wait(timeout):
-            raise TimeoutError("the audio request timed out")
-        if "error" in box:
-            raise box["error"]
-        return box.get("result")
-
-
-AUDIO = AudioWorker()
-
 class Controller:
     def __init__(self, ui):
         self.ui = ui
@@ -684,7 +545,6 @@ class Controller:
         self.paused_by_us = False
         self.resume_pos = None
         self.action_generation = 0
-        self.volume_changed = False
         self.lock = threading.Lock()
 
     def toggle_media(self):
@@ -715,29 +575,6 @@ class Controller:
                 self.music_playing = desired
             return True
 
-    def set_volume(self, level):
-        """Volume mode: set the volume of the media apps to level (0-100)."""
-        with self.lock:
-            try:
-                changed = AUDIO.call(set_app_volume, level / 100.0)
-            except Exception as e:
-                self.ui.event("system", f"Volume error: {type(e).__name__}: {e}")
-                return False
-            self.volume_changed = self.volume_changed or bool(changed)
-            if not changed:
-                self.ui.event("system", "No audio apps to change the volume of")
-                return False
-            return True
-
-    def restore_volume(self):
-        if not self.volume_changed:
-            return
-        try:
-            AUDIO.call(restore_app_volume)
-        except Exception as e:
-            self.ui.event("system", f"Volume error: {type(e).__name__}: {e}")
-        self.volume_changed = False
-
     def apply_action(self, event, delay=None, stop_event=None):
         actions = self.ui.actions
         if delay is None:
@@ -753,18 +590,11 @@ class Controller:
         self.last_event = event
         self.last_event_time = now
 
-        if self.ui.mode == MODE_VOLUME:
-            level = self.ui.volumes.get(event)
-            self.ui.event("event", (event, "None" if level is None else f"{level}%"))
-            if level is None:
-                return
-            desired = ("volume", level)
-        else:
-            action = actions.get(event, "None")
-            self.ui.event("event", (event, action))
-            if action == "None":
-                return
-            desired = action == "Play"
+        action = actions.get(event, "None")
+        self.ui.event("event", (event, action))
+        if action == "None":
+            return
+        desired = action == "Play"
         self.action_generation += 1
         generation = self.action_generation
         if delay:
@@ -786,10 +616,6 @@ class Controller:
 
     def commit_action(self, desired, stop_event):
         if stop_event is not None and stop_event.is_set():
-            return
-        if isinstance(desired, tuple):               # volume mode: ("volume", level)
-            if self.set_volume(desired[1]):
-                self.ui.event("volume", desired[1])
             return
         if self.set_playing(desired):
             self.paused_by_us = not desired
@@ -823,8 +649,6 @@ class Controller:
         self.stop_event.set()
 
     def release(self):
-        """Undo whatever VibePause did: restore app volumes and resume music it paused."""
-        self.restore_volume()
         if self.paused_by_us:
             return self.set_playing(True)
         return False
@@ -864,7 +688,6 @@ class Controller:
             self.ui.event("valorant", running)
             if not running:
                 self.reset_match_state()
-                self.restore_volume()
                 if self.paused_by_us and self.ui.active and self.set_playing(True):
                     self.ui.event("music", "Playing")
 
@@ -1433,12 +1256,6 @@ class App:
         self.close_to_tray = True
         self.hotkey = ""   # global on/off hotkey; empty = none (default)
         self.hotkeys = HotkeyListener(lambda: self.event("cmd", "toggle_active"))
-        self.mode = MODE_PAUSE                      # "pause" (play/pause) or "volume" (per-event volume)
-        self.volumes = DEFAULT_VOLUMES.copy()       # event -> 0-100, or None = leave unchanged
-        self.language = "en"
-        self.vol_widgets = {}
-        self._media_state = None
-        self._hero_event = None
         self.settings_open = False
         self.tray_icon = None
         self.tray_popup = None
@@ -1511,16 +1328,6 @@ class App:
                 self.close_to_tray = clean_bool(d.get("close_to_tray"), True)
                 saved_hotkey = d.get("hotkey", "")
                 self.hotkey = saved_hotkey if parse_hotkey(saved_hotkey) else ""
-                lang = d.get("language")
-                self.language = lang if lang in LANG_CODES else "en"
-                set_language(self.language)
-                mode = d.get("mode")
-                self.mode = mode if mode in (MODE_PAUSE, MODE_VOLUME) else MODE_PAUSE
-                saved_volumes = d.get("volumes")
-                if isinstance(saved_volumes, dict):
-                    for k in self.volumes:
-                        if k in saved_volumes:
-                            self.volumes[k] = clean_volume(saved_volumes[k], self.volumes[k])
         except Exception:
             pass
 
@@ -1536,9 +1343,6 @@ class App:
             "close_to_tray": self.close_to_tray,
             "auto_update_enabled": self.auto_update_enabled,
             "hotkey": self.hotkey,
-            "language": self.language,
-            "mode": self.mode,
-            "volumes": self.volumes,
         })
         data.pop("selected_media_app", None)
         if not write_settings(data):
@@ -1823,9 +1627,7 @@ class App:
                             fill=self.FAINT, font=self.F(8))
         self.cv.bind("<ButtonPress-1>", self.canvas_press)
         self.cv.bind("<B1-Motion>", self.canvas_drag)
-        if not getattr(self, "_bars_running", False):
-            self._bars_running = True
-            self.animate_bars()
+        self.animate_bars()
 
     def compose_scene(self, W, H):
         scene = render_aurora(self.sx(W), self.sx(H))
@@ -1897,11 +1699,11 @@ class App:
         x = 1012
         x = self.round_button(x, cy, "close", self.img("close"), self.on_window_close, danger=True)
         x = self.round_button(x - 8, cy, "gear", self.img("gear"), self.toggle_settings)
-        x = self.toggle_pill(x - 8, cy, tr("Auto-update"), self.auto_update_var,
+        x = self.toggle_pill(x - 8, cy, "Auto-update", self.auto_update_var,
                              lambda: self.set_auto_update_enabled(self.auto_update_var.get()), "t_update")
-        x = self.toggle_pill(x - 8, cy, tr("Run on startup"), self.startup_var,
+        x = self.toggle_pill(x - 8, cy, "Run on startup", self.startup_var,
                              lambda: self.set_startup(self.startup_var.get()), "t_startup")
-        x = self.toggle_pill(x - 8, cy, tr("Active"), self.active_var,
+        x = self.toggle_pill(x - 8, cy, "Active", self.active_var,
                              lambda: self.set_active(self.active_var.get()), "t_active")
         self.build_status_pill(x - 8, cy)
 
@@ -1965,21 +1767,19 @@ class App:
     def build_status_pill(self, right, cy):
         cv = self.cv
         font = self.F(10, True)
-        longest = max((tr(t) for t in ("VALORANT not running", "VALORANT running", "Stopped", "Starting...")),
-                      key=lambda t: self.font_for(10, True).measure(t))
-        w = int(self.font_for(10, True).measure(longest) / self.S) + 56
+        w = int(self.font_for(10, True).measure("VALORANT not running") / self.S) + 56
         h = 36
         x0 = right - w
         bg = self.photo(self.gi(w, h, h // 2, fill=(255, 255, 255, 14), border=(255, 255, 255, 38)))
         cv.create_image(x0, cy, image=bg, anchor="w")
         self.status_dot = cv.create_oval(x0 + 17, cy - 5, x0 + 27, cy + 5, width=2, fill=self.MUTED, outline=self.MUTED)
-        self.status_text = cv.create_text(x0 + 38, cy, text=tr("Starting..."), anchor="w", font=font, fill=self.MUTED)
+        self.status_text = cv.create_text(x0 + 38, cy, text="Starting...", anchor="w", font=font, fill=self.MUTED)
 
     def build_hero_card(self):
         cv = self.cv
         cx, cy = self.RING_CENTER
-        cv.create_text(cx, cy - 32, text=" ".join(tr("NOW")), fill=self.GREEN, font=self.F(9, True))
-        self.hero_event_item = cv.create_text(cx, cy + 8, text=tr(self._hero_event or "Waiting for VALORANT"), fill=self.TEXT,
+        cv.create_text(cx, cy - 32, text="N O W", fill=self.GREEN, font=self.F(9, True))
+        self.hero_event = cv.create_text(cx, cy + 8, text="Waiting for VALORANT", fill=self.TEXT,
                                          font=self.F(17), width=150, justify="center")
         self.bar_items = []
         base_y = 376
@@ -1989,7 +1789,7 @@ class App:
             self.bar_items.append(cv.create_line(x, base_y - 5, x, base_y + 5, width=6, capstyle="round", fill=color))
         self.bar_x = [cx - 58.5 + i * 13 for i in range(10)]
         self.bar_y = base_y
-        self.hero_music = cv.create_text(cx, 424, text=tr("Checking media..."), fill=self.MUTED, font=self.F(10))
+        self.hero_music = cv.create_text(cx, 424, text="Checking media...", fill=self.MUTED, font=self.F(10))
 
         for tag, label, icon, fill, border, color, x0, command in (
             ("b_play", "Play", "play", (47, 227, 198, 52), (80, 240, 215, 115), self.GREEN, 52, self.force_play),
@@ -2002,12 +1802,12 @@ class App:
             glyph = self.img(icon)
             if glyph:
                 cv.create_image(x0 + 34, y0 + h // 2, image=glyph, tags=(tag, "nodrag"))
-            cv.create_text(x0 + 52, y0 + h // 2, text=tr(label), fill=color, font=self.F(11, True), anchor="w", tags=(tag, "nodrag"))
+            cv.create_text(x0 + 52, y0 + h // 2, text=label, fill=color, font=self.F(11, True), anchor="w", tags=(tag, "nodrag"))
             self.make_clickable(tag, command, lambda on, b=bg, n=normal, ho=hot: cv.itemconfig(b, image=ho if on else n))
 
     def build_events(self):
         cv = self.cv
-        cv.create_text(374, 108, text=tr("Music behaviour"), fill=self.TEXT, font=self.F(13, True), anchor="w")
+        cv.create_text(374, 108, text="Music behaviour", fill=self.TEXT, font=self.F(13, True), anchor="w")
         reset_icon = self.img("reset")
         d = 30
         rx = 1012 - 22 - d
@@ -2017,186 +1817,42 @@ class App:
         if reset_icon:
             cv.create_image(rx + d // 2, 108, image=reset_icon, tags=("reset", "nodrag"))
         self.make_clickable("reset", self.reset, lambda on: cv.itemconfig(rbg, image=hot if on else normal))
-        self.build_mode_switch(rx - 12)
 
         tw, th = self.TILE_SIZE
         clear = self.photo(Image.new("RGBA", (self.sx(tw), self.sx(th)), (0, 0, 0, 0)))
         name_font = self.font_for(11, True)
         desc_font = self.font_for(9)
-        self.vol_widgets = {}
         for i, (name, desc) in enumerate(EVENTS):
             x, y = self.tile_origin(i)
             tag = f"tile{i}"
             tags = (tag, "nodrag")
-            ptags = tags + ("pm",)          # shown in pause mode
             cv.create_image(x, y, image=clear, anchor="nw", tags=tags)
-            cv.create_text(x + 20, y + 25, text=tr(name), fill=self.TEXT, font=name_font, anchor="w", tags=tags)
-            cv.create_text(x + 20, y + 46, text=self.fit(tr(desc), self.sx(tw - 20 - 20 - 34 - 10), desc_font), fill=self.MUTED,
-                           font=desc_font, anchor="w", tags=ptags)
+            cv.create_text(x + 20, y + 25, text=name, fill=self.TEXT, font=name_font, anchor="w", tags=tags)
+            cv.create_text(x + 20, y + 46, text=self.fit(desc, self.sx(tw - 20 - 20 - 34 - 10), desc_font), fill=self.MUTED,
+                           font=desc_font, anchor="w", tags=tags)
             v = tk.StringVar(value=self.actions[name])
             self.action_vars[name] = v
             self.action_button[name] = cv.create_image(x + tw - 20 - 34, y + 17, image=self.chip_imgs["None"],
-                                                       anchor="nw", tags=ptags)
+                                                       anchor="nw", tags=tags)
             self.refresh_action(name, v)
             self.make_clickable(tag, lambda n=name, var=v: self.cycle_choice(n, var))
-            self.build_volume_widget(i, name, x, y)
-        self.apply_mode_visibility()
-
-    # ---- pause / volume mode ----
-    def set_language_choice(self, code):
-        if code == self.language or code not in LANG_CODES:
-            return
-        self.language = code
-        set_language(code)
-        self.save()
-        reopen = self.settings_open
-        self.rebuild_ui()
-        if reopen:
-            self.root.after(60, self.toggle_settings)
-
-    def rebuild_ui(self):
-        """Redraw the whole window in the current language, keeping its live state."""
-        self.close_settings()
-        self.close_tray_popup()
-        try:
-            self.cv.destroy()
-        except tk.TclError:
-            pass
-        self.action_vars, self.action_button, self.vol_widgets = {}, {}, {}
-        self.build()
-        self.status_update()
-        if self._media_state is not None:
-            self.set_media_state(self._media_state)
-        self.refresh_log()
-        self._tray_state = None
-        self.update_tray()
-
-    def build_mode_switch(self, right):
-        cv = self.cv
-        w, h, cy = 176, 30, 108
-        x0 = right - w
-        half = w // 2
-        base = self.gi(w, h, h // 2, fill=(255, 255, 255, 14), border=(255, 255, 255, 38))
-        imgs = {}
-        for mode in (MODE_PAUSE, MODE_VOLUME):
-            img = base.copy()
-            seg = self.gi(half - 4, h - 6, (h - 6) // 2, fill=(47, 227, 198, 52), border=(80, 240, 215, 125))
-            img.alpha_composite(seg, (self.sx(2 + (0 if mode == MODE_PAUSE else half)), self.sx(3)))
-            imgs[mode] = self.photo(img)
-        tags = ("modesw", "nodrag")
-        bg = cv.create_image(x0, cy, image=imgs[self.mode], anchor="w", tags=tags)
-        t_pause = cv.create_text(x0 + half // 2, cy, text=tr("Pause"), font=self.F(9, True), tags=tags)
-        t_vol = cv.create_text(x0 + half + half // 2, cy, text=tr("Volume"), font=self.F(9, True), tags=tags)
-        for tag, mode, left in (("mode_p", MODE_PAUSE, x0), ("mode_v", MODE_VOLUME, x0 + half)):
-            cv.create_image(left, cy - h // 2, image=self.photo_clear(self.sx(half), self.sx(h)), anchor="nw",
-                            tags=(tag, "nodrag"))
-            self.make_clickable(tag, lambda m=mode: self.set_mode(m))
-        self._mode_items = (bg, t_pause, t_vol, imgs)
-
-    def apply_mode_visibility(self):
-        cv = self.cv
-        cv.itemconfigure("pm", state="normal" if self.mode == MODE_PAUSE else "hidden")
-        cv.itemconfigure("vm", state="normal" if self.mode == MODE_VOLUME else "hidden")
-        bg, t_pause, t_vol, imgs = self._mode_items
-        cv.itemconfig(bg, image=imgs[self.mode])
-        cv.itemconfig(t_pause, fill=self.TEXT if self.mode == MODE_PAUSE else self.MUTED)
-        cv.itemconfig(t_vol, fill=self.TEXT if self.mode == MODE_VOLUME else self.MUTED)
-
-    def set_mode(self, mode):
-        if mode == self.mode:
-            return
-        if mode == MODE_VOLUME and not AUDIO_AVAILABLE:
-            self.log_line("Volume mode is not available in this build")
-            return
-        self.mode = mode
-        self.apply_mode_visibility()
-        self.save()
-        # Leaving a mode undoes it: resume music that was paused, or put volumes back.
-        threading.Thread(target=self.controller.release, daemon=True).start()
-        if mode == MODE_VOLUME:
-            self.log_line(tr("Volume mode: drag to set each event's volume. Click the percentage to leave an event unchanged."))
-
-    def build_volume_widget(self, i, name, x, y):
-        """A drawn slider for one tile (volume mode). Click the percentage to leave the event unchanged."""
-        cv = self.cv
-        tw, _ = self.TILE_SIZE
-        x0, x1, ty = x + 20, x + tw - 20, y + 51
-        vtags = ("vm", "nodrag")
-        label = cv.create_text(x1, y + 25, text="", anchor="e", font=self.F(10, True), tags=vtags + (f"vlabel{i}",))
-        cv.create_line(x0, ty, x1, ty, width=6, capstyle="round", fill=self.PANEL3, tags=vtags)
-        fill = cv.create_line(x0, ty, x0, ty, width=6, capstyle="round", fill=self.GREEN, tags=vtags)
-        knob = cv.create_oval(x0 - 8, ty - 8, x0 + 8, ty + 8, fill="#f1efff", outline=self.BLUE, width=2, tags=vtags)
-        stag = f"vslider{i}"
-        cv.create_image(x0 - 10, ty - 14, image=self.photo_clear(self.sx(x1 - x0 + 20), self.sx(28)), anchor="nw",
-                        tags=vtags + (stag,))
-        self.vol_widgets[name] = {"label": label, "fill": fill, "knob": knob, "x0": x0, "x1": x1, "ty": ty}
-
-        def level_at(e):
-            return max(0, min(100, round((e.x / self.S - x0) / (x1 - x0) * 100)))
-
-        def drag(e):
-            self.volumes[name] = level_at(e)
-            self.refresh_volume(name)
-
-        def release(_e):
-            self.save()
-
-        cv.tag_bind(stag, "<Button-1>", drag)
-        cv.tag_bind(stag, "<B1-Motion>", drag)
-        cv.tag_bind(stag, "<ButtonRelease-1>", release)
-        cv.tag_bind(stag, "<Enter>", lambda e: cv.config(cursor="sb_h_double_arrow"))
-        cv.tag_bind(stag, "<Leave>", lambda e: cv.config(cursor=""))
-        last = {"level": DEFAULT_VOLUMES[name]}
-
-        def toggle_unchanged():
-            if self.volumes.get(name) is None:
-                self.volumes[name] = last["level"]
-            else:
-                last["level"] = self.volumes[name]
-                self.volumes[name] = None
-            self.refresh_volume(name)
-            self.save()
-
-        self.make_clickable(f"vlabel{i}", toggle_unchanged)
-        self.refresh_volume(name)
-
-    def refresh_volume(self, name):
-        w = self.vol_widgets.get(name)
-        if not w:
-            return
-        cv = self.cv
-        level = self.volumes.get(name)
-        if level is None:
-            cv.itemconfig(w["label"], text=tr("No change"), fill=self.FAINT)
-            cv.itemconfig(w["fill"], fill=self.FAINT)
-            cv.itemconfig(w["knob"], fill=self.FAINT, outline=self.BORDER)
-            px = w["x0"]
-        else:
-            cv.itemconfig(w["label"], text=f"{level}%", fill=self.TEXT)
-            cv.itemconfig(w["fill"], fill=self.GREEN)
-            cv.itemconfig(w["knob"], fill="#f1efff", outline=self.BLUE)
-            px = w["x0"] + (w["x1"] - w["x0"]) * level / 100
-        cv.coords(w["fill"], w["x0"], w["ty"], px, w["ty"])
-        cv.coords(w["knob"], px - 8, w["ty"] - 8, px + 8, w["ty"] + 8)
 
     def refresh_action(self, event, var):
         value = var.get()
         self.cv.itemconfig(self.action_button[event], image=self.chip_imgs.get(value, self.chip_imgs["None"]))
 
     def cycle_choice(self, event, var):
-        if self.mode != MODE_PAUSE:
-            return
         order = ["None", "Play", "Pause"]
         value = order[(order.index(var.get()) + 1) % len(order)]
         var.set(value)
         self.actions[event] = value
         self.refresh_action(event, var)
         self.save()
-        self.log_line(f"{tr(event)}: {tr(value)}")
+        self.log_line(f"{event}: {value}")
 
     def build_media_card(self):
         cv = self.cv
-        cv.create_text(374, 474, text=tr("Supported media"), fill=self.TEXT, font=self.F(13, True), anchor="w")
+        cv.create_text(374, 474, text="Supported media", fill=self.TEXT, font=self.F(13, True), anchor="w")
         keys = {"Google Chrome": ("chrome", "Chrome"), "YouTube Music": ("youtube_music", "YouTube Music"),
                 "Apple Music": ("apple_music", "Apple Music"), "Spotify": ("spotify", "Spotify")}
         for i, name in enumerate(MEDIA_APPS):
@@ -2206,13 +1862,13 @@ class App:
             if icon:
                 cv.create_image(x + 10, y + 18, image=icon, anchor="w")
             cv.create_text(x + 36, y + 18, text=label, fill=self.TEXT, font=self.F(9), anchor="w")
-        cv.create_text(374, 592, text=tr("Any Windows media app. Call apps are skipped."), fill=self.MUTED,
+        cv.create_text(374, 592, text="Any Windows media app. Call apps are skipped.", fill=self.MUTED,
                        font=self.F(8), anchor="w", width=290)
 
     def build_activity_card(self):
         cv = self.cv
-        cv.create_text(712, 474, text=tr("Live activity"), fill=self.TEXT, font=self.F(13, True), anchor="w")
-        clear = cv.create_text(990, 474, text=tr("Clear"), fill=self.MUTED, font=self.F(9, True), anchor="e", tags=("clear", "nodrag"))
+        cv.create_text(712, 474, text="Live activity", fill=self.TEXT, font=self.F(13, True), anchor="w")
+        clear = cv.create_text(990, 474, text="Clear", fill=self.MUTED, font=self.F(9, True), anchor="e", tags=("clear", "nodrag"))
         self.make_clickable("clear", self.clear_log, lambda on: cv.itemconfig(clear, fill=self.TEXT if on else self.MUTED))
         self.log_font = self.font_for(9)
         self.log_items = [cv.create_text(712, 504 + i * 21, text="", anchor="w", font=self.F(9), fill=self.MUTED)
@@ -2235,7 +1891,6 @@ class App:
                         half = 3
                     self.cv.coords(item, self.bar_x[i], self.bar_y - half, self.bar_x[i], self.bar_y + half)
         except tk.TclError:
-            self._bars_running = False
             return
         except Exception:
             pass
@@ -2245,13 +1900,11 @@ class App:
             pass
 
     def set_media_state(self, state):
-        self._media_state = state
         text, color, active = {
             "playing": ("Music is playing", self.GREEN, True),
             "paused": ("Music is paused", "#ffb3c8", False),
             "none": ("No music app open", self.MUTED, False),
         }.get(state, ("Media status unavailable", self.MUTED, False))
-        text = tr(text)
         self.bars_active = active
         self.cv.itemconfig(self.hero_music, text=text, fill=color)
 
@@ -2315,9 +1968,9 @@ class App:
         cv.place(x=self.sx(x), y=self.sx(y))
         cv.create_image(0, 0, image=cache["base"], anchor="nw")
         self.settings_overlay = cv
-        cv.create_text(24, 34, text=tr("Settings"), fill=self.TEXT, font=self.F(14, True), anchor="w")
+        cv.create_text(24, 34, text="Settings", fill=self.TEXT, font=self.F(14, True), anchor="w")
 
-        cv.create_text(24, 82, text=tr("Close button sends to tray"), fill=self.TEXT, font=self.F(10), anchor="w", tags=("sw",))
+        cv.create_text(24, 82, text="Close button sends to tray", fill=self.TEXT, font=self.F(10), anchor="w", tags=("sw",))
         switch = cv.create_image(W - 24 - 40, 71, image=self.switch_photo(bool(self.close_tray_var.get())), anchor="nw", tags=("sw",))
         cv.create_image(0, 56, image=self.photo_clear(self.sx(W), self.sx(52)), anchor="nw", tags=("sw",))
 
@@ -2327,10 +1980,10 @@ class App:
             self.set_close_to_tray()
 
         self.make_clickable("sw", flip, cv=cv)
-        cv.create_text(24, 112, text=tr("Off: the X button exits VibePause completely."), fill=self.MUTED,
+        cv.create_text(24, 112, text="Off: the X button exits VibePause completely.", fill=self.MUTED,
                        font=self.F(9), anchor="w", width=282)
 
-        cv.create_text(24, 154, text=tr("Event delay"), fill=self.TEXT, font=self.F(10), anchor="w")
+        cv.create_text(24, 154, text="Event delay", fill=self.TEXT, font=self.F(10), anchor="w")
         self.delay_settings = tk.StringVar(value=str(self.delay))
         vcmd = (self.root.register(lambda v: v == "" or (v.isdigit() and len(v) <= 5)), "%P")
         entry = tk.Entry(cv, textvariable=self.delay_settings, width=9, bg=self.PANEL2, fg=self.TEXT,
@@ -2354,7 +2007,7 @@ class App:
             except tk.TclError:
                 pass
         entry.after(50, focus_entry)
-        cv.create_text(148, 189, text=tr("milliseconds"), fill=self.MUTED, font=self.F(9), anchor="w")
+        cv.create_text(148, 189, text="milliseconds", fill=self.MUTED, font=self.F(9), anchor="w")
 
         def button(tag, top, label, command, fill, border, color, x=24, w=282, h=40, size=10):
             if tag not in cache:
@@ -2366,28 +2019,13 @@ class App:
             self.make_clickable(tag, command, lambda on: cv.itemconfig(bg, image=hot if on else normal), cv=cv)
             return txt
 
-        # ---- Language ----
-        def open_language_menu():
-            menu = tk.Menu(self.root, tearoff=0, bg=self.PANEL2, fg=self.TEXT, activebackground=self.PANEL3,
-                           activeforeground=self.TEXT, bd=0, relief="flat", font=self.F(10))
-            for code, native in LANGUAGES:
-                menu.add_command(label=("\u2713  " if code == self.language else "     ") + native,
-                                 command=lambda c=code: self.root.after(10, lambda: self.set_language_choice(c)))
-            try:
-                menu.tk_popup(self.root.winfo_pointerx(), self.root.winfo_pointery())
-            finally:
-                menu.grab_release()
-
-        button("lang", 18, dict(LANGUAGES).get(self.language, "English") + " \u25be", open_language_menu,
-               (255, 255, 255, 14), (255, 255, 255, 44), self.TEXT, x=W - 24 - 150, w=150, h=30, size=9)
-
         # ---- Hotkey (off by default; can always be cleared) ----
         HK_HINT = "Click the box, then press Ctrl, Alt or Shift plus a key. Applies right away."
-        cv.create_text(24, 234, text=tr("Hotkey: turn VibePause on/off"), fill=self.TEXT, font=self.F(10), anchor="w")
+        cv.create_text(24, 234, text="Hotkey: turn VibePause on/off", fill=self.TEXT, font=self.F(10), anchor="w")
         hk = {"capturing": False}
 
         def show_hotkey():
-            cv.itemconfig(hk_text, text=self.hotkey or tr("None"), fill=self.TEXT if self.hotkey else self.MUTED)
+            cv.itemconfig(hk_text, text=self.hotkey or "None", fill=self.TEXT if self.hotkey else self.MUTED)
 
         def note(message, color=None):
             cv.itemconfig(hk_hint, text=message, fill=color or self.MUTED)
@@ -2420,7 +2058,7 @@ class App:
                 return
             hk["capturing"] = True
             self.hotkeys.stop()      # so pressing the current combination doesn't toggle VibePause meanwhile
-            cv.itemconfig(hk_text, text=tr("Press keys..."), fill=self.BLUE)
+            cv.itemconfig(hk_text, text="Press keys...", fill=self.BLUE)
             note("Press the combination now. Esc cancels.")
             cv.bind("<KeyPress>", on_key)
             cv.focus_force()
@@ -2440,14 +2078,14 @@ class App:
         show_hotkey()
 
         # ---- Updates + support ----
-        button("upd", 338, tr("Check for updates"), self.check_for_updates, (255, 255, 255, 18), (255, 255, 255, 50), self.TEXT)
+        button("upd", 338, "Check for updates", self.check_for_updates, (255, 255, 255, 18), (255, 255, 255, 50), self.TEXT)
         self.update_status_item = cv.create_text(24, 392, text=f"VibePause {APP_VERSION}", fill=self.MUTED,
                                                  font=self.F(8), anchor="nw", width=282)
-        button("logdir", 428, tr("Open log folder"), self.open_log_folder, (255, 255, 255, 14), (255, 255, 255, 44),
+        button("logdir", 428, "Open log folder", self.open_log_folder, (255, 255, 255, 14), (255, 255, 255, 44),
                self.TEXT, x=24, w=137, h=36, size=9)
-        button("diag", 428, tr("Copy diagnostics"), self.copy_diagnostics, (255, 255, 255, 14), (255, 255, 255, 44),
+        button("diag", 428, "Copy diagnostics", self.copy_diagnostics, (255, 255, 255, 14), (255, 255, 255, 44),
                self.TEXT, x=169, w=137, h=36, size=9)
-        button("save", 474, tr("Save settings"), self.save_settings_page, (255, 93, 143, 62), (255, 125, 170, 125), self.RED)
+        button("save", 474, "Save settings", self.save_settings_page, (255, 93, 143, 62), (255, 125, 170, 125), self.RED)
 
     def check_for_updates(self):
         """Settings > CHECK FOR UPDATES. Runs the network work off the UI thread."""
@@ -2711,8 +2349,8 @@ class App:
         logo = self.img("vibepause_logo_32")
         if logo:
             cv.create_image(28, 40, image=logo, anchor="w")
-        cv.create_text(72, 32, text=tr("Before you start"), fill=self.TEXT, font=self.F(15, True), anchor="w")
-        cv.create_text(72, 56, text=tr("Read both documents to the end to unlock I Agree."), fill=self.MUTED,
+        cv.create_text(72, 32, text="Before you start", fill=self.TEXT, font=self.F(15, True), anchor="w")
+        cv.create_text(72, 56, text="Read both documents to the end to unlock I Agree.", fill=self.MUTED,
                        font=self.F(9), anchor="w")
 
         def press(e):
@@ -2727,8 +2365,8 @@ class App:
         cv.bind("<B1-Motion>", drag)
 
         docs = {
-            "terms": ("TERMS_AND_CONDITIONS.md", tr("Terms and Conditions")),
-            "privacy": ("PRIVACY_POLICY.md", tr("Privacy Policy")),
+            "terms": ("TERMS_AND_CONDITIONS.md", "Terms and Conditions"),
+            "privacy": ("PRIVACY_POLICY.md", "Privacy Policy"),
         }
         read = {"terms": False, "privacy": False}
         current = {"doc": "terms"}
@@ -2758,10 +2396,10 @@ class App:
             cv.itemconfig(agree_bg, image=agree_on if ok else agree_off)
             cv.itemconfig(agree_text, fill=self.RED if ok else self.FAINT)
             if ok:
-                cv.itemconfig(hint, text=tr("Thanks. You can accept now."), fill=self.GREEN)
+                cv.itemconfig(hint, text="Thanks. You can accept now.", fill=self.GREEN)
             else:
                 left = [docs[k][1] for k, v in read.items() if not v]
-                cv.itemconfig(hint, text=tr("Still to read:") + " " + " / ".join(left), fill=self.MUTED)
+                cv.itemconfig(hint, text="Still to read: " + " and ".join(left), fill=self.MUTED)
 
         def on_scroll(first, last):
             first, last = float(first), float(last)
@@ -2840,11 +2478,11 @@ class App:
             text = cv.create_text(left + width // 2, 550, text=label, font=self.F(11, True), tags=(tag,))
             return normal, bg, text
 
-        exit_img, exit_bg, exit_text = button("decline", 28, tr("Exit"), 130, (255, 255, 255, 14), (255, 255, 255, 44))
+        exit_img, exit_bg, exit_text = button("decline", 28, "Exit", 130, (255, 255, 255, 14), (255, 255, 255, 44))
         cv.itemconfig(exit_text, fill=self.MUTED)
         self.make_clickable("decline", self.complete_exit, cv=cv)
 
-        agree_off, agree_bg, agree_text = button("agree", 612 - 200, tr("I Agree"), 200, (255, 255, 255, 10), (255, 255, 255, 30))
+        agree_off, agree_bg, agree_text = button("agree", 612 - 200, "I Agree", 200, (255, 255, 255, 10), (255, 255, 255, 30))
         agree_on = self.photo(self.gi(200, 44, 18, fill=(255, 93, 143, 70), border=(255, 125, 170, 135)))
 
         def accept_legal():
@@ -2951,9 +2589,6 @@ class App:
         for k, v in self.action_vars.items():
             v.set(self.actions[k])
             self.refresh_action(k, v)
-        self.volumes = DEFAULT_VOLUMES.copy()
-        for k in self.vol_widgets:
-            self.refresh_volume(k)
         self.delay = 0
         self.save()
         self.log_line("Reset to default")
@@ -2992,7 +2627,7 @@ class App:
             text, color = "VALORANT running", self.GREEN
         else:
             text, color = "VALORANT not running", self.MUTED
-        self.cv.itemconfig(self.status_text, text=tr(text), fill=color)
+        self.cv.itemconfig(self.status_text, text=text, fill=color)
         self.cv.itemconfig(self.status_dot, fill=color, outline=color)
         self.update_tray()
 
@@ -3052,14 +2687,11 @@ class App:
             self._show_update_notification(value)
         elif kind == "event":
             event, action = value
-            self._hero_event = event
-            self.hero.itemconfig(self.hero_event_item, text=tr(event))
-            self.log_line(f"{now}  {tr(event)}  [{tr(action)}]")
+            self.hero.itemconfig(self.hero_event, text=event)
+            self.log_line(f"{now}  {event}  [{action}]")
         elif kind == "music":
             self.set_music_status(value == "Playing")
-            self.log_line(f"{now}  {tr('Music')}: {tr(value)}")
-        elif kind == "volume":
-            self.log_line(f"{now}  {tr('Volume')}: {value}%")
+            self.log_line(f"{now}  Music: {value}")
         elif kind == "media":
             self.set_media_state(value)
         elif kind == "valorant":
@@ -3142,10 +2774,10 @@ class App:
             img = Image.new("RGBA", (64, 64), (20, 20, 20, 255))
         self.tray_images = {True: img, False: img.convert("LA").convert("RGBA")}
         menu = pystray.Menu(
-            pystray.MenuItem(tr("Open VibePause"), lambda icon, item: self.event("cmd", "open"), default=True),
-            pystray.MenuItem(tr("Active"), lambda icon, item: self.event("cmd", "toggle_active"),
+            pystray.MenuItem("Open VibePause", lambda icon, item: self.event("cmd", "open"), default=True),
+            pystray.MenuItem("Active", lambda icon, item: self.event("cmd", "toggle_active"),
                              checked=lambda item: self.active),
-            pystray.MenuItem(tr("Exit VibePause"), lambda icon, item: self.event("cmd", "exit")),
+            pystray.MenuItem("Exit VibePause", lambda icon, item: self.event("cmd", "exit")),
         )
         app = self
 
@@ -3171,11 +2803,11 @@ class App:
         if not icon:
             return
         if not self.running:
-            label = tr("Stopped")
+            label = "Stopped"
         elif self.valorant_running:
-            label = tr("VALORANT running")
+            label = "VALORANT running"
         else:
-            label = tr("Waiting for VALORANT")
+            label = "Waiting for VALORANT"
         state = (self.running, label)
         if state == self._tray_state:
             return
@@ -3226,11 +2858,11 @@ class App:
             cv.create_image(18, 30, image=logo, anchor="w")
         cv.create_text(50, 24, text="VibePause", fill=self.TEXT, font=self.F(12, True), anchor="w")
         if not self.running:
-            label, color = tr("Stopped"), self.MUTED
+            label, color = "Stopped", self.MUTED
         elif self.valorant_running:
-            label, color = tr("VALORANT running"), self.GREEN
+            label, color = "VALORANT running", self.GREEN
         else:
-            label, color = tr("Waiting for VALORANT"), self.MUTED
+            label, color = "Waiting for VALORANT", self.MUTED
         cv.create_oval(50, 40, 58, 48, fill=color, outline=color)
         cv.create_text(65, 44, text=label, fill=color, font=self.F(9), anchor="w")
         cv.create_line(16, 62, W - 16, 62, fill="#4a4a7a")
@@ -3250,9 +2882,9 @@ class App:
             cv.tag_bind(tag, "<Leave>", lambda e: (cv.itemconfig(shade, state="hidden"), cv.config(cursor="")))
             cv.tag_bind(tag, "<Button-1>", lambda e: (self.close_tray_popup(), command()))
 
-        row(0, tr("Active"), lambda: self.set_active_from_tray(not self.active), with_switch=True)
-        row(1, tr("Open VibePause"), self._show)
-        row(2, tr("Exit VibePause"), self.complete_exit)
+        row(0, "Active", lambda: self.set_active_from_tray(not self.active), with_switch=True)
+        row(1, "Open VibePause", self._show)
+        row(2, "Exit VibePause", self.complete_exit)
         cv.photos = photos
 
         state = {"entered": False, "outside": 0, "age": 0}
