@@ -19,9 +19,18 @@ OutputDir=..\installer_output
 OutputBaseFilename=VibePause_Setup
 Compression=lzma2
 SolidCompression=yes
+; Inno Setup 6.6+ can draw the whole wizard in dark mode, matching the app. Older compilers
+; fall back to the normal (light) modern style, so the build never breaks.
+#if Ver >= 0x06060000
+WizardStyle=modern dark
+#else
 WizardStyle=modern
+#endif
 WizardImageFile=wizard_large.bmp
 WizardSmallImageFile=wizard_small.bmp
+; Same deep navy as the app background (Inno colours are BGR: #0a0a1c)
+WizardImageBackColor=$1c0a0a
+WizardSmallImageBackColor=$1c0a0a
 SetupIconFile=..\VibePause.ico
 UninstallDisplayIcon={app}\VibePause.ico
 UninstallDisplayName=VibePause
