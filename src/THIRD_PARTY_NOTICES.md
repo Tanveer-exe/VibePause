@@ -65,21 +65,3 @@ VibePause uses the following third-party libraries and components:
 ### Notes
 This list includes libraries directly used in VibePause as of version 0.1.3.
 Transitive dependencies are not listed individually but are subject to their own licenses.
-
-## pycaw
-- Used for per-app volume control in volume mode (Windows Core Audio)
-- License: MIT License
-- Copyright (c) Andre Miras and contributors
-- Source: https://pypi.org/project/pycaw/
-
-## comtypes
-- Used by pycaw to talk to Windows COM interfaces
-- License: MIT License
-- Copyright (c) Thomas Heller and contributors
-- Source: https://pypi.org/project/comtypes/
-
-## psutil
-- Used by pycaw to look up processes
-- License: BSD 3-Clause License
-- Copyright (c) 2009, Jay Loden, Dave Daeschler, Giampaolo Rodola
-- Source: https://pypi.org/project/psutil/

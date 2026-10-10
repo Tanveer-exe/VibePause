@@ -6,12 +6,10 @@ datas = [
     ("VibePause.ico", "."),
     ("TERMS_AND_CONDITIONS.md", "."),
     ("PRIVACY_POLICY.md", "."),
-    ("lang", "lang"),
 ]
 binaries, hiddenimports = [], ["pystray._win32"]
 for pkg in ("pystray", "PIL", "winrt.runtime", "winrt.windows.media.control",
-            "winrt.windows.foundation", "winrt.windows.foundation.collections",
-            "pycaw", "comtypes", "psutil"):
+            "winrt.windows.foundation", "winrt.windows.foundation.collections"):
     try:
         d, b, h = collect_all(pkg)
         datas += d; binaries += b; hiddenimports += h

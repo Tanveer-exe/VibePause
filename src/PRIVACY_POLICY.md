@@ -21,7 +21,7 @@ VibePause runs on your computer. It does not collect, store or sell personal dat
 
 ## Data Stored On Your Computer
 
-VibePause saves your settings in a file named settings.json in the Documents\VibePause folder. This file contains your chosen actions for each game event, the event delay, your startup and tray preferences, update check preference, the optional hotkey you chose (none by default), your language and mode (pause or volume), the volume levels you set, and which version of the legal terms you accepted.
+VibePause saves your settings in a file named settings.json in the Documents\VibePause folder. This file contains your chosen actions for each game event, the event delay, your startup and tray preferences, update check preference, the optional hotkey you chose (none by default), and which version of the legal terms you accepted.
 
 This file stays on your computer. It is never uploaded. Uninstalling VibePause keeps this file so your settings survive a reinstall. You can delete the folder yourself at any time.
 
@@ -33,7 +33,6 @@ The Settings screen has two support buttons. Open log folder opens this folder i
 
 - The VALORANT game log file on your computer (ShooterGame.log), read locally to detect game events such as a round starting. Nothing from this file is sent anywhere.
 - Windows media sessions, which VibePause uses to play or pause your music. VibePause does not read the titles, artists or content of what is playing.
-- In volume mode, which apps are playing sound, and their volume, using the same Windows audio information as the volume mixer. VibePause only changes the volume of those apps, never changes VALORANT, Riot software, voice chat or call apps, and puts the volumes back when you leave volume mode or exit. This stays on your computer.
 - If you set a hotkey, VibePause asks Windows to tell it when that one key combination is pressed, only so it can turn itself on or off. It does not record or read any other keystrokes.
 
 ## Network Use
