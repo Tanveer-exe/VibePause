@@ -11,6 +11,7 @@ Keep each section short. The heading must match the version number, for example 
 - New: Volume mode. Switch from Pause to Volume and each event gets a volume slider instead of Play/Pause
 - New: 15 languages for VALORANT's biggest regions. You pick one on first start and can change it in Settings (translations are machine-made, corrections welcome)
 - Fixed: dying in a match is now detected, so Player Eliminated works
+- New: closing VibePause for real (the X button with Close to Tray off, or Exit in the tray) now asks "Quit VibePause?" first
 - Fixed: Ultimate Used no longer triggers when a teammate or enemy is revived, only when you are
 - Fixed: the music no longer pauses for a moment when the buy phase opens
 - Fixed: Play only resumes the music app VibePause paused, not every app that was open
