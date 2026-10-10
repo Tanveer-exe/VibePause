@@ -1,8 +1,4 @@
 # Changelog
-
-Each release's section below becomes its GitHub release notes, and VibePause shows them in the update prompt.
-Keep each section short. The heading must match the version number, for example `## 0.1.6`.
-
 ## 0.1.4
 
 - New: an optional hotkey to turn VibePause on or off (off by default, and you can clear it any time)
