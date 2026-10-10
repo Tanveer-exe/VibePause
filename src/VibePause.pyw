@@ -1881,6 +1881,24 @@ class App:
                 self.event("media", state)
             time.sleep(3)
 
+    def trash_photo(self):
+        cache = self.__dict__.setdefault("_settings_cache", {})
+        if "trash" not in cache:
+            size = self.sx(18)
+            big = size * 4
+            img = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+            d = ImageDraw.Draw(img)
+            u = big / 18
+            color = (255, 93, 143, 255)
+            w = max(2, int(round(1.6 * u)))
+            d.rounded_rectangle((3.5 * u, 5.5 * u, 14.5 * u, 6.8 * u), radius=0.6 * u, fill=color)
+            d.rounded_rectangle((7 * u, 3.2 * u, 11 * u, 5.5 * u), radius=0.8 * u, outline=color, width=w)
+            d.rounded_rectangle((4.8 * u, 7.2 * u, 13.2 * u, 15.6 * u), radius=1.6 * u, outline=color, width=w)
+            for x in (7.6, 10.4):
+                d.line((x * u, 9.4 * u, x * u, 13.4 * u), fill=color, width=max(2, int(round(1.2 * u))))
+            cache["trash"] = self.photo(img.resize((size, size), Image.Resampling.LANCZOS))
+        return cache["trash"]
+
     def warm_settings(self):
         if not self.settings_open:
             self.toggle_settings()
@@ -2008,8 +2026,9 @@ class App:
             show_hotkey()
             note(message, self.GREEN)
 
-        hk_text = button("hk", 250, "", start_capture, (255, 255, 255, 14), (255, 255, 255, 44), self.TEXT, x=24, w=190, h=36)
-        button("hkclear", 250, "None", clear_hotkey, (255, 255, 255, 10), (255, 255, 255, 36), self.MUTED, x=222, w=84, h=36)
+        hk_text = button("hk", 250, "", start_capture, (255, 255, 255, 14), (255, 255, 255, 44), self.TEXT, x=24, w=230, h=36)
+        button("hkclear", 250, "", clear_hotkey, (255, 93, 143, 30), (255, 125, 170, 90), self.RED, x=262, w=44, h=36)
+        cv.create_image(262 + 22, 250 + 18, image=self.trash_photo(), tags=("hkclear",))
         hk_hint = cv.create_text(24, 296, text=HK_HINT, fill=self.MUTED, font=self.F(8), anchor="nw", width=282)
         show_hotkey()
 
