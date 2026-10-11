@@ -864,6 +864,7 @@ class Controller:
             self.ui.event("valorant", running)
             if not running:
                 self.reset_match_state()
+                self.restore_volume()
                 if self.paused_by_us and self.ui.active and self.set_playing(True):
                     self.ui.event("music", "Playing")
 
@@ -1777,6 +1778,27 @@ class App:
             text = text[:-1]
         return text + "..."
 
+    def fit_size(self, text, width, size, bold=False, smallest=7):
+        """Largest font size (down to smallest) at which text is at most width logical pixels wide."""
+        while size > smallest and self.font_for(size, bold).measure(text) > width * self.S:
+            size -= 1
+        return size
+
+    def hero_font_size(self, text):
+        """Font size for the event name inside the ring: its longest word must fit the width and the
+        whole name must wrap to at most two lines."""
+        size = 17
+        while size > 10:
+            font = self.font_for(size)
+            longest = max((font.measure(word) for word in text.split()), default=0)
+            if longest <= 146 * self.S and font.measure(text) <= 2 * 138 * self.S:
+                break
+            size -= 1
+        return size
+
+    def set_hero_text(self, text):
+        self.hero.itemconfig(self.hero_event_item, text=text, font=self.F(self.hero_font_size(text)))
+
     def tile_origin(self, i):
         return 372 + (i % 2) * 315, 130 + (i // 2) * 74
 
@@ -1884,6 +1906,8 @@ class App:
                     pass
             self.chip_imgs[state] = self.photo(chip)
 
+    HEADER_LEFT_LIMIT = 190
+
     def build_header(self):
         cv = self.cv
         cy = self.HEADER_H // 2
@@ -1900,13 +1924,21 @@ class App:
         x = 1012
         x = self.round_button(x, cy, "close", self.img("close"), self.on_window_close, danger=True)
         x = self.round_button(x - 8, cy, "gear", self.img("gear"), self.toggle_settings)
-        x = self.toggle_pill(x - 8, cy, tr("Auto-update"), self.auto_update_var,
-                             lambda: self.set_auto_update_enabled(self.auto_update_var.get()), "t_update")
-        x = self.toggle_pill(x - 8, cy, tr("Run on startup"), self.startup_var,
-                             lambda: self.set_startup(self.startup_var.get()), "t_startup")
-        x = self.toggle_pill(x - 8, cy, tr("Active"), self.active_var,
-                             lambda: self.set_active(self.active_var.get()), "t_active")
-        self.build_status_pill(x - 8, cy)
+        labels = [tr("Auto-update"), tr("Run on startup"), tr("Active")]
+        status_longest = max((tr(t) for t in ("VALORANT not running", "VALORANT running", "Stopped", "Starting...")),
+                             key=lambda t: self.font_for(10, True).measure(t))
+        natural = [int(self.font_for(10, True).measure(t) / self.S) for t in labels + [status_longest]]
+        room = (x - 8) - self.HEADER_LEFT_LIMIT
+        needed = sum(n + 56 for n in natural) + 3 * 8
+        cut = max(0, -(-(needed - room) // 4))
+        limits = [max(40, n - cut) for n in natural]
+        x = self.toggle_pill(x - 8, cy, labels[0], self.auto_update_var,
+                             lambda: self.set_auto_update_enabled(self.auto_update_var.get()), "t_update", limits[0])
+        x = self.toggle_pill(x - 8, cy, labels[1], self.startup_var,
+                             lambda: self.set_startup(self.startup_var.get()), "t_startup", limits[1])
+        x = self.toggle_pill(x - 8, cy, labels[2], self.active_var,
+                             lambda: self.set_active(self.active_var.get()), "t_active", limits[2])
+        self.build_status_pill(x - 8, cy, limits[3])
 
     def round_button(self, right, cy, tag, icon, command, danger=False):
         d = 36
@@ -1920,9 +1952,11 @@ class App:
         self.make_clickable(tag, command, lambda on: self.cv.itemconfig(bg, image=hover_img if on else normal))
         return x0
 
-    def toggle_pill(self, right, cy, label, var, command, tag):
+    def toggle_pill(self, right, cy, label, var, command, tag, limit=None):
         cv = self.cv
         font = self.F(10, True)
+        if limit:
+            label = self.fit(label, limit * self.S, self.font_for(10, True))
         w = int(self.font_for(10, True).measure(label) / self.S) + 56
         h = 36
         x0 = right - w
@@ -1965,25 +1999,31 @@ class App:
             cache[state] = self.photo(sw)
         return cache[state]
 
-    def build_status_pill(self, right, cy):
+    def build_status_pill(self, right, cy, limit=None):
         cv = self.cv
         font = self.F(10, True)
         longest = max((tr(t) for t in ("VALORANT not running", "VALORANT running", "Stopped", "Starting...")),
                       key=lambda t: self.font_for(10, True).measure(t))
-        w = int(self.font_for(10, True).measure(longest) / self.S) + 56
+        self._status_limit = limit
+        w = min(int(self.font_for(10, True).measure(longest) / self.S), limit or 10 ** 6) + 56
         h = 36
         x0 = right - w
         bg = self.photo(self.gi(w, h, h // 2, fill=(255, 255, 255, 14), border=(255, 255, 255, 38)))
         cv.create_image(x0, cy, image=bg, anchor="w")
         self.status_dot = cv.create_oval(x0 + 17, cy - 5, x0 + 27, cy + 5, width=2, fill=self.MUTED, outline=self.MUTED)
-        self.status_text = cv.create_text(x0 + 38, cy, text=tr("Starting..."), anchor="w", font=font, fill=self.MUTED)
+        self.status_text = cv.create_text(x0 + 38, cy, text=self.status_fit(tr("Starting...")), anchor="w", font=font, fill=self.MUTED)
+
+    def status_fit(self, text):
+        limit = getattr(self, "_status_limit", None)
+        return self.fit(text, limit * self.S, self.font_for(10, True)) if limit else text
 
     def build_hero_card(self):
         cv = self.cv
         cx, cy = self.RING_CENTER
         cv.create_text(cx, cy - 32, text=" ".join(tr("NOW")), fill=self.GREEN, font=self.F(9, True))
-        self.hero_event_item = cv.create_text(cx, cy + 8, text=tr(self._hero_event or "Waiting for VALORANT"), fill=self.TEXT,
-                                         font=self.F(17), width=150, justify="center")
+        hero_text = tr(self._hero_event or "Waiting for VALORANT")
+        self.hero_event_item = cv.create_text(cx, cy + 8, text=hero_text, fill=self.TEXT,
+                                         font=self.F(self.hero_font_size(hero_text)), width=150, justify="center")
         self.bar_items = []
         base_y = 376
         for i in range(10):
@@ -2005,7 +2045,9 @@ class App:
             glyph = self.img(icon)
             if glyph:
                 cv.create_image(x0 + 34, y0 + h // 2, image=glyph, tags=(tag, "nodrag"))
-            cv.create_text(x0 + 52, y0 + h // 2, text=tr(label), fill=color, font=self.F(11, True), anchor="w", tags=(tag, "nodrag"))
+            label_text = tr(label)
+            cv.create_text(x0 + 52, y0 + h // 2, text=label_text, fill=color,
+                           font=self.F(self.fit_size(label_text, w - 52 - 10, 11, True), True), anchor="w", tags=(tag, "nodrag"))
             self.make_clickable(tag, command, lambda on, b=bg, n=normal, ho=hot: cv.itemconfig(b, image=ho if on else n))
 
     def build_events(self):
@@ -2321,7 +2363,8 @@ class App:
         self.settings_overlay = cv
         cv.create_text(24, 34, text=tr("Settings"), fill=self.TEXT, font=self.F(14, True), anchor="w")
 
-        cv.create_text(24, 82, text=tr("Close button sends to tray"), fill=self.TEXT, font=self.F(10), anchor="w", tags=("sw",))
+        tray_label = cv.create_text(24, 82, text=tr("Close button sends to tray"), fill=self.TEXT, font=self.F(10),
+                                    anchor="w", tags=("sw",), width=W - 24 - 40 - 24 - 10)
         switch = cv.create_image(W - 24 - 40, 71, image=self.switch_photo(bool(self.close_tray_var.get())), anchor="nw", tags=("sw",))
         cv.create_image(0, 56, image=self.photo_clear(self.sx(W), self.sx(52)), anchor="nw", tags=("sw",))
 
@@ -2331,8 +2374,10 @@ class App:
             self.set_close_to_tray()
 
         self.make_clickable("sw", flip, cv=cv)
-        cv.create_text(24, 112, text=tr("Off: the X button exits VibePause completely."), fill=self.MUTED,
-                       font=self.F(9), anchor="w", width=282)
+        label_box = cv.bbox(tray_label)
+        note_y = max(104, int(label_box[3] / self.S) + 5) if label_box else 104
+        cv.create_text(24, note_y, text=tr("Off: the X button exits VibePause completely."), fill=self.MUTED,
+                       font=self.F(9), anchor="nw", width=282)
 
         cv.create_text(24, 154, text=tr("Event delay"), fill=self.TEXT, font=self.F(10), anchor="w")
         self.delay_settings = tk.StringVar(value=str(self.delay))
@@ -2361,12 +2406,14 @@ class App:
         cv.create_text(148, 189, text=tr("milliseconds"), fill=self.MUTED, font=self.F(9), anchor="w")
 
         def button(tag, top, label, command, fill, border, color, x=24, w=282, h=40, size=10):
-            if tag not in cache:
-                cache[tag] = (self.photo(self.gi(w, h, 16, fill=fill, border=border)),
+            key = (tag, w, h)
+            if key not in cache:
+                cache[key] = (self.photo(self.gi(w, h, 16, fill=fill, border=border)),
                               self.photo(self.gi(w, h, 16, fill=fill[:3] + (fill[3] + 36,), border=border)))
-            normal, hot = cache[tag]
+            normal, hot = cache[key]
             bg = cv.create_image(x, top, image=normal, anchor="nw", tags=(tag,))
-            txt = cv.create_text(x + w // 2, top + h // 2, text=label, fill=color, font=self.F(size, True), tags=(tag,))
+            txt = cv.create_text(x + w // 2, top + h // 2, text=label, fill=color,
+                                 font=self.F(self.fit_size(label, w - 20, size, True), True), tags=(tag,))
             self.make_clickable(tag, command, lambda on: cv.itemconfig(bg, image=hot if on else normal), cv=cv)
             return txt
 
@@ -2382,8 +2429,10 @@ class App:
             finally:
                 menu.grab_release()
 
+        title_end = 24 + int(self.font_for(14, True).measure(tr("Settings")) / self.S)
+        lang_w = max(96, min(150, W - 24 - title_end - 14 - 24))
         button("lang", 18, dict(LANGUAGES).get(self.language, "English") + " \u25be", open_language_menu,
-               (255, 255, 255, 14), (255, 255, 255, 44), self.TEXT, x=W - 24 - 150, w=150, h=30, size=9)
+               (255, 255, 255, 14), (255, 255, 255, 44), self.TEXT, x=W - 24 - lang_w, w=lang_w, h=30, size=9)
 
         # ---- Hotkey (off by default; can always be cleared) ----
         HK_HINT = "Click the box, then press Ctrl, Alt or Shift plus a key. Applies right away."
@@ -3064,7 +3113,7 @@ class App:
             text, color = "VALORANT running", self.GREEN
         else:
             text, color = "VALORANT not running", self.MUTED
-        self.cv.itemconfig(self.status_text, text=tr(text), fill=color)
+        self.cv.itemconfig(self.status_text, text=self.status_fit(tr(text)), fill=color)
         self.cv.itemconfig(self.status_dot, fill=color, outline=color)
         self.update_tray()
 
@@ -3125,7 +3174,7 @@ class App:
         elif kind == "event":
             event, action = value
             self._hero_event = event
-            self.hero.itemconfig(self.hero_event_item, text=tr(event))
+            self.set_hero_text(tr(event))
             self.log_line(f"{now}  {tr(event)}  [{tr(action)}]")
         elif kind == "music":
             self.set_music_status(value == "Playing")
