@@ -19,13 +19,10 @@ OutputDir=..\installer_output
 OutputBaseFilename=VibePause_Setup
 Compression=lzma2
 SolidCompression=yes
-; Inno Setup 6.6+ can draw the whole wizard in dark mode, matching the app. Older compilers
-; fall back to the normal (light) modern style, so the build never breaks.
-#if Ver >= 0x06060000
-WizardStyle=modern dark
-#else
+; The dark colours are painted by the [Code] section below, the same way on every Inno Setup 6.x.
+; (Do not use "WizardStyle=modern dark" here: it re-colours the window itself and the rounded
+; buttons then show square dark corners against a different grey.)
 WizardStyle=modern
-#endif
 WizardImageFile=wizard_large.bmp,wizard_large_125.bmp,wizard_large_150.bmp,wizard_large_200.bmp
 WizardSmallImageFile=wizard_small.bmp,wizard_small_125.bmp,wizard_small_150.bmp,wizard_small_200.bmp
 DisableWelcomePage=no
