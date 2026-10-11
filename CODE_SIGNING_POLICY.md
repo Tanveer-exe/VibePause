@@ -1,12 +1,23 @@
 # Code signing policy
 
-**Status: planned.** VibePause plans to apply for free code signing from the
-[SignPath Foundation](https://signpath.org/). Until then, the installer is **not signed**, so
-Windows SmartScreen may show "Windows protected your PC".
+**Status: planned.** VibePause is a new project that is building a track record (users, releases and
+history). It plans to apply for free code signing from the [SignPath Foundation](https://signpath.org/) once
+that is in place. Until then, the installer is **not signed**, so Windows SmartScreen may show
+"Windows protected your PC".
 
 If the application is approved, releases will be signed and this page will carry the line
 "Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
 [SignPath Foundation](https://signpath.org)".
+
+## Installing while it is unsigned
+
+1. Run `VibePause_Setup.exe`. If your browser says the file isn't commonly downloaded, open the download's menu,
+   choose **Keep**, then **Keep anyway**.
+2. If Windows shows **Windows protected your PC**, click **More info**.
+3. Click **Run anyway**.
+
+Only do this for an installer you downloaded from this repository's Releases page or the
+[official website](https://tanveer-exe.github.io/VibePause/). You can compare its checksum first (see below).
 
 ## What will be signed
 

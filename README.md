@@ -40,9 +40,15 @@
 
 VibePause installs for your user account, so administrator rights are not required.
 
-> **Windows SmartScreen:** The installer is currently not code-signed, so Windows may display "Windows protected your PC". Click **More info**, then **Run anyway** if you trust the application.
+### Installing with Windows SmartScreen
 
-**Checking your download:** each release also includes `VibePause_Setup.exe.sha256`. In PowerShell, `Get-FileHash VibePause_Setup.exe` should show the same value.
+VibePause is a new project and the installer is **not code-signed yet**. We plan to apply for free code signing from the [SignPath Foundation](https://signpath.org/) once the project has built up a track record, so Windows may show a warning for now. Only continue if you downloaded the installer from this repository's Releases page or the [official website](https://tanveer-exe.github.io/VibePause/).
+
+1. Run `VibePause_Setup.exe`. If your browser says the file isn't commonly downloaded, open the download's menu (...), choose **Keep**, then **Keep anyway**. The wording differs between browsers.
+2. If Windows shows **Windows protected your PC**, click **More info**. The publisher appears as "Unknown" because the installer is not signed yet.
+3. Click **Run anyway**.
+
+**Checking your download:** each release also includes `VibePause_Setup.exe.sha256`. In PowerShell, `Get-FileHash .\VibePause_Setup.exe` should show the same value.
 
 See the [code signing policy](CODE_SIGNING_POLICY.md) for the status of code signing.
 
@@ -164,7 +170,7 @@ VibePause is an external companion application.
 
 ## Code signing policy
 
-VibePause plans to apply for free code signing from the [SignPath Foundation](https://signpath.org/). Until then, the installer is not signed.
+VibePause is building a track record and plans to apply for free code signing from the [SignPath Foundation](https://signpath.org/). Until then, the installer is not signed (see [Installing with Windows SmartScreen](#installing-with-windows-smartscreen)).
 
 - Committers, reviewers and approvers: [tanveer-exe](https://github.com/Tanveer-exe)
 - Privacy policy: see the [Privacy Policy](src/PRIVACY_POLICY.md). VibePause collects no personal data and only contacts GitHub, to check for and download updates.
