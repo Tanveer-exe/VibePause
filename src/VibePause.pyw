@@ -864,6 +864,7 @@ class Controller:
             self.ui.event("valorant", running)
             if not running:
                 self.reset_match_state()
+                self.restore_volume()
                 if self.paused_by_us and self.ui.active and self.set_playing(True):
                     self.ui.event("music", "Playing")
 
