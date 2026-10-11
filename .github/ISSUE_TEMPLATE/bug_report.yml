@@ -11,7 +11,7 @@ body:
     attributes:
       label: VibePause version
       description: Shown in Settings, under Check for updates.
-      placeholder: "0.1.4"
+      placeholder: "1.0.0"
     validations:
       required: true
   - type: input
