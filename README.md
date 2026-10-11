@@ -44,7 +44,7 @@ VibePause installs for your user account, so administrator rights are not requir
 
 **Checking your download:** each release also includes `VibePause_Setup.exe.sha256`. In PowerShell, `Get-FileHash VibePause_Setup.exe` should show the same value.
 
-See [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md) for the status of code signing.
+See the [code signing policy](CODE_SIGNING_POLICY.md) for the status of code signing.
 
 After installation, launch VibePause, start your preferred Windows media app, and launch VALORANT.
 
@@ -161,6 +161,14 @@ VibePause does **not**:
 VibePause is an external companion application.
 
 ---
+
+## Code signing policy
+
+VibePause plans to apply for free code signing from the [SignPath Foundation](https://signpath.org/). Until then, the installer is not signed.
+
+- Committers, reviewers and approvers: [tanveer-exe](https://github.com/Tanveer-exe)
+- Privacy policy: see the [Privacy Policy](src/PRIVACY_POLICY.md). VibePause collects no personal data and only contacts GitHub, to check for and download updates.
+- Full details: [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md)
 
 ## Privacy
 
