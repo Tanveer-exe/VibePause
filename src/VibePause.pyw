@@ -937,8 +937,19 @@ class Controller:
                     out = BytesIO()
                     shot.save(out, format="BMP")
                     text = await self._ocr_recognize(engine, out.getvalue())
-                    compact = re.sub(r"[^A-Z]", "", text.upper())
-                    if "KILLEDBY" in compact and self.round_active and not self.player_dead:
+                    upper_text = text.upper()
+                    compact = re.sub(r"[^A-Z0-9]", "", upper_text)
+                    # Windows OCR may put a space/punctuation between words, or
+                    # return each word separately. Support both representations.
+                    tokens = re.findall(r"[A-Z0-9]+", upper_text)
+                    has_death_banner = (
+                        "KILLEDBY" in compact
+                        or any(
+                            tokens[i] == "KILLED" and tokens[i + 1] == "BY"
+                            for i in range(len(tokens) - 1)
+                        )
+                    )
+                    if has_death_banner and self.round_active and not self.player_dead:
                         self.player_dead = True
                         self.round_active = False
                         self.ui.event("system", "Death banner detected by Windows OCR.")
