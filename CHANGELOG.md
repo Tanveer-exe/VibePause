@@ -3,6 +3,9 @@
 
 First full release.
 
+- Add Windows built-in OCR fallback for local death detection by looking for the on-screen “KILLED BY” banner during active rounds.
+- Include Windows OCR runtime dependencies in the packaged build.
+
 - New: Volume mode. Switch from Pause to Volume and each event gets a volume slider instead of Play/Pause
 - New: 15 languages. You pick one on first start and can change it in Settings (translations are machine-made, corrections welcome)
 - New: an optional hotkey to turn VibePause on or off (off by default)
