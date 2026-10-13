@@ -5,7 +5,8 @@ import ctypes.wintypes
 from tkinter import font as tkfont
 from tkinter import messagebox
 
-from PIL import Image, ImageDraw, ImageTk, ImageFilter, ImageChops
+from PIL import Image, ImageDraw, ImageTk, ImageFilter, ImageChops, ImageGrab
+from io import BytesIO
 
 try:
     import pystray
@@ -489,6 +490,17 @@ try:
 except Exception:
     GSMTC_AVAILABLE = False
 
+# Optional Windows built-in OCR. The OCR language pack for English must be installed.
+# Imports are lazy so the app can still start if OCR components are unavailable.
+try:
+    from winrt.windows.media.ocr import OcrEngine as _OcrEngine
+    from winrt.windows.graphics.imaging import BitmapDecoder as _BitmapDecoder
+    from winrt.windows.storage.streams import InMemoryRandomAccessStream as _InMemoryRandomAccessStream
+    from winrt.windows.storage.streams import DataWriter as _DataWriter
+    WINDOWS_OCR_AVAILABLE = True
+except Exception:
+    WINDOWS_OCR_AVAILABLE = False
+
 def _session_id(session):
     try:
         return session.source_app_user_model_id
@@ -669,6 +681,7 @@ class Controller:
         self.ui = ui
         self.stop_event = threading.Event()
         self.thread = None
+        self.ocr_thread = None
         self.music_playing = True
         self.game_running = False
         self.last_process_check = 0.0
@@ -890,7 +903,73 @@ class Controller:
             close_quietly(holder)
             return
 
+    async def _ocr_recognize(self, engine, screenshot_bytes):
+        stream = _InMemoryRandomAccessStream()
+        writer = _DataWriter(stream)
+        writer.write_bytes(screenshot_bytes)
+        await writer.store_async()
+        await writer.flush_async()
+        writer.detach_stream()
+        stream.seek(0)
+        decoder = await _BitmapDecoder.create_async(stream)
+        bitmap = await decoder.get_software_bitmap_async()
+        result = await engine.recognize_async(bitmap)
+        return " ".join(line.text for line in result.lines)
+
+    async def _ocr_death_loop_async(self, stop_event):
+        engine = _OcrEngine.try_create_from_user_profile_languages()
+        if engine is None:
+            self.ui.event("system", "Windows OCR unavailable: install the English OCR language pack in Windows Settings.")
+            return
+        self.ui.event("system", "Windows OCR death detection enabled (looking for KILLED BY).")
+        error_reported = False
+        while not stop_event.is_set():
+            try:
+                # OCR only during an active combat round; this avoids scanning the desktop
+                # during the lobby and limits CPU use. Crop away screen edges but retain the
+                # central death banner, then encode as BMP for Windows.Media.Ocr.
+                if (self.game_running and self.in_match and self.round_active
+                        and not self.player_dead
+                        and (time.monotonic() - self.round_started_at) >= 2.0):
+                    shot = ImageGrab.grab()
+                    w, h = shot.size
+                    shot = shot.crop((int(w * 0.08), int(h * 0.05), int(w * 0.92), int(h * 0.92)))
+                    out = BytesIO()
+                    shot.save(out, format="BMP")
+                    text = await self._ocr_recognize(engine, out.getvalue())
+                    compact = re.sub(r"[^A-Z]", "", text.upper())
+                    if "KILLEDBY" in compact and self.round_active and not self.player_dead:
+                        self.player_dead = True
+                        self.round_active = False
+                        self.ui.event("system", "Death banner detected by Windows OCR.")
+                        self.apply_action("Player Eliminated", stop_event=stop_event)
+                    error_reported = False
+                await asyncio.sleep(0.65)
+            except Exception as e:
+                if not error_reported:
+                    self.ui.event("system", f"Windows OCR error: {type(e).__name__}: {e}")
+                    write_error_log(f"Windows OCR error: {type(e).__name__}: {e}")
+                    error_reported = True
+                await asyncio.sleep(1.5)
+
+    def _start_ocr_death_monitor(self, stop_event):
+        if not WINDOWS_OCR_AVAILABLE:
+            self.ui.event("system", "Windows OCR unavailable in this build; install the updated VibePause build with OCR support.")
+            return
+        if self.ocr_thread is not None and self.ocr_thread.is_alive():
+            return
+        def run_ocr():
+            try:
+                asyncio.run(self._ocr_death_loop_async(stop_event))
+            except Exception as e:
+                msg = f"Windows OCR monitor stopped: {type(e).__name__}: {e}"
+                self.ui.event("system", msg)
+                write_error_log(msg)
+        self.ocr_thread = threading.Thread(target=run_ocr, name="VibePause-OCR", daemon=True)
+        self.ocr_thread.start()
+
     def monitor(self, stop_event, holder, resume=False):
+        self._start_ocr_death_monitor(stop_event)
         f = self.follow(stop_event, not resume)
         if not f:
             return

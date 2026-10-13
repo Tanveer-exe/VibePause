@@ -1,6 +1,6 @@
 # Privacy Policy for VibePause
 
-Last updated: October 9, 2026
+Last updated: October 13, 2026
 
 tanveer-exe ("us", "we", or "our") operates the VibePause application (the "Service").
 
@@ -32,6 +32,7 @@ The Settings screen has two support buttons. Open log folder opens this folder i
 ## What VibePause Reads
 
 - The VALORANT game log file on your computer (ShooterGame.log), read locally to detect game events such as a round starting. Nothing from this file is sent anywhere.
+- While Windows OCR death detection is enabled, VibePause temporarily captures the screen during an active combat round and uses the built-in Windows OCR engine to look for the “KILLED BY” banner. Screenshots are processed in memory, not saved to disk, and never uploaded or transmitted.
 - Windows media sessions, which VibePause uses to play or pause your music. VibePause does not read the titles, artists or content of what is playing.
 - In volume mode, which apps are playing sound, and their volume, using the same Windows audio information as the volume mixer. VibePause only changes the volume of those apps, never changes VALORANT, Riot software, voice chat or call apps, and puts the volumes back when you leave volume mode or exit. This stays on your computer.
 - If you set a hotkey, VibePause asks Windows to tell it when that one key combination is pressed, only so it can turn itself on or off. It does not record or read any other keystrokes.
