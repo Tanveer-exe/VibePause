@@ -124,12 +124,10 @@ section{padding:70px 0}
 .step p{color:var(--muted);margin-top:10px}
 code{font:500 .92em ui-monospace,Consolas,monospace;background:rgba(255,255,255,.08);padding:2px 7px;border-radius:7px}
 
-.split{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:48px;align-items:center}
+.split{display:grid;grid-template-columns:1fr;gap:48px;align-items:center}
 .never{list-style:none;padding:0;margin:26px 0 0;display:grid;grid-template-columns:1fr 1fr;gap:10px 28px;color:var(--muted)}
 .never li{padding-left:26px;position:relative}
 .never li::before{content:"";position:absolute;left:0;top:.62em;width:12px;height:2px;background:var(--pink);border-radius:2px}
-.tray{padding:12px;border-radius:26px;transform:rotate(2deg);box-shadow:0 30px 70px -25px rgba(0,0,0,.8)}
-.tray img{display:block;border-radius:18px;width:252px;height:auto}
 
 .os{padding:34px}
 .langbar{display:flex;height:11px;border-radius:99px;overflow:hidden;background:rgba(255,255,255,.1);margin:22px 0 16px}
@@ -145,9 +143,8 @@ footer p+p{margin-top:8px;max-width:44rem}
 footer a{text-underline-offset:3px}
 
 @media (max-width:900px){
-  .hero,.try,.split{grid-template-columns:1fr}
+  .hero,.try{grid-template-columns:1fr}
   .flow{grid-template-columns:1fr}
-  .tray{justify-self:start;transform:none}
   .hero{padding-top:30px}
 }
 @media (max-width:560px){
@@ -208,7 +205,7 @@ footer a{text-underline-offset:3px}
       <p>No overlay, no hooks into the game. VibePause only reads a file and presses play or pause for you.</p>
     </div>
     <div class="flow">
-      <div class="step glass"><h3>It reads the game log</h3><p>VALORANT writes <code>ShooterGame.log</code> on your own PC. VibePause follows that file to spot round starts, deaths, and match changes.</p></div>
+      <div class="step glass"><h3>It reads the game log</h3><p>VALORANT writes <code>ShooterGame.log</code> on your own PC. VibePause follows that file to spot round starts and match changes, and uses Windows' built-in OCR to detect when you're eliminated.</p></div>
       <div class="step glass"><h3>It matches the event</h3><p>Each event has the action you chose: Play, Pause, or None, or a volume level in Volume mode. A delay setting lets you shift when it fires.</p></div>
       <div class="step glass"><h3>It controls your media</h3><p>It uses Windows media controls, so Spotify, YouTube Music, Apple Music and browser players all work. Call apps like Discord are left alone.</p></div>
     </div>
@@ -241,7 +238,6 @@ footer a{text-underline-offset:3px}
           <li>No Riot account details</li>
         </ul>
       </div>
-      <div class="tray glass"><img src="tray.png" width="252" height="200" alt="The VibePause tray menu with an Active switch"></div>
     </div>
   </section>
 

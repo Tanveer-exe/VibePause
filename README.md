@@ -67,7 +67,7 @@ Supported events include:
 - Game start
 - Combat phase
 - Buy phase
-- Player death
+- Player eliminated (detected using Windows' built-in OCR)
 - Match finish
 - Returning to the lobby
 - Character select
@@ -98,25 +98,7 @@ This means it can work with compatible music players, browsers, and other media 
 
 ### System tray
 
-VibePause can run quietly in the Windows system tray.
-
-From the tray menu you can:
-
-- Open VibePause
-- Turn VibePause on or off with the Active switch
-- Exit VibePause
-
-<p align="center">
-  <img src="docs/tray.png" alt="VibePause tray menu" width="252">
-</p>
-
-You can also choose whether closing the window sends VibePause to the tray or exits the application.
-
-### Start with Windows
-
-You can optionally start VibePause automatically when Windows starts.
-
-When enabled, VibePause launches in the system tray and runs in the background.
+VibePause can run quietly in the Windows system tray, with a switch to turn it on or off.
 
 ### Settings
 
@@ -136,15 +118,7 @@ Settings are saved locally.
 
 ### Updates
 
-Open **Settings** and select **Check for updates**.
-
-If a newer version is available, VibePause shows what's new and asks for confirmation before downloading and installing it.
-
-If you are already running the latest version, VibePause will let you know.
-
-VibePause can also check for updates automatically in the background (about every four hours). You can turn this off in **Settings**; then it only contacts GitHub when you click **Check for updates**.
-
-Update checks use the public GitHub API to check for releases. No other information is sent as part of the update check.
+Open **Settings** and select **Check for updates** to update manually, or turn on automatic checks so VibePause lets you know when a new version is out.
 
 ---
 
