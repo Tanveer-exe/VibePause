@@ -682,6 +682,7 @@ class Controller:
         self.stop_event = threading.Event()
         self.thread = None
         self.ocr_thread = None
+        self.ocr_stop_event = None
         self.music_playing = True
         self.game_running = False
         self.last_process_check = 0.0
@@ -967,7 +968,11 @@ class Controller:
         if not WINDOWS_OCR_AVAILABLE:
             self.ui.event("system", "Windows OCR unavailable in this build; install the updated VibePause build with OCR support.")
             return
-        if self.ocr_thread is not None and self.ocr_thread.is_alive():
+        # A thread tied to an older stop_event may still be alive (its loop only checks the
+        # event once per sleep cycle), but it is already on its way out and will never serve
+        # this stop_event. Only an OCR thread for THIS stop_event counts as already running.
+        if (self.ocr_thread is not None and self.ocr_thread.is_alive()
+                and self.ocr_stop_event is stop_event):
             return
         def run_ocr():
             try:
@@ -976,6 +981,7 @@ class Controller:
                 msg = f"Windows OCR monitor stopped: {type(e).__name__}: {e}"
                 self.ui.event("system", msg)
                 write_error_log(msg)
+        self.ocr_stop_event = stop_event
         self.ocr_thread = threading.Thread(target=run_ocr, name="VibePause-OCR", daemon=True)
         self.ocr_thread.start()
 
@@ -1595,6 +1601,7 @@ class App:
                     if val in ("Play", "Pause", "None"):
                         self.actions[k] = val
                 self.delay = clean_delay(d.get("delay", 0))
+                self.active = clean_bool(d.get("active"), True)
                 self.startup = clean_bool(d.get("startup"), False)
                 self.close_to_tray = clean_bool(d.get("close_to_tray"), True)
                 saved_hotkey = d.get("hotkey", "")
@@ -1621,6 +1628,7 @@ class App:
         data.update({
             "actions": self.actions,
             "delay": self.delay,
+            "active": self.active,
             "startup": self.startup,
             "close_to_tray": self.close_to_tray,
             "auto_update_enabled": self.auto_update_enabled,
