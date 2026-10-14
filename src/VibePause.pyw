@@ -337,6 +337,81 @@ def valorant_running():
     return any(name in VALORANT_PROCESSES for _, name in procs)
 
 
+class _RECT(ctypes.Structure):
+    _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
+                ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+
+class _MONITORINFO(ctypes.Structure):
+    _fields_ = [("cbSize", ctypes.c_uint32), ("rcMonitor", _RECT),
+                ("rcWork", _RECT), ("dwFlags", ctypes.c_uint32)]
+
+
+MONITOR_DEFAULTTONEAREST = 2
+
+
+def valorant_monitor_rect():
+    """The Windows monitor VALORANT's window is currently on, as a (left, top, right, bottom)
+    tuple in virtual-screen coordinates (can include negative values for a monitor to the
+    left of or above the primary one). None if it can't be determined (VALORANT not running,
+    its window not found, or any Win32 call fails), so callers can fall back to the primary
+    monitor instead of silently screenshotting the wrong one on a multi-monitor setup."""
+    if os.name != "nt":
+        return None
+    try:
+        procs = list_processes()
+        if not procs:
+            return None
+        valorant_pids = {pid for pid, name in procs if name in VALORANT_PROCESSES}
+        if not valorant_pids:
+            return None
+
+        HWND, LPARAM, BOOL, DWORD = ctypes.wintypes.HWND, ctypes.wintypes.LPARAM, ctypes.wintypes.BOOL, ctypes.wintypes.DWORD
+        WNDENUMPROC = ctypes.WINFUNCTYPE(BOOL, HWND, LPARAM)
+        user32.EnumWindows.argtypes = [WNDENUMPROC, LPARAM]
+        user32.EnumWindows.restype = BOOL
+        user32.IsWindowVisible.argtypes = [HWND]
+        user32.GetWindowThreadProcessId.argtypes = [HWND, ctypes.POINTER(DWORD)]
+        user32.GetWindowRect.argtypes = [HWND, ctypes.POINTER(_RECT)]
+        user32.MonitorFromRect.argtypes = [ctypes.POINTER(_RECT), ctypes.c_uint32]
+        user32.MonitorFromRect.restype = ctypes.c_void_p
+        user32.GetMonitorInfoW.argtypes = [ctypes.c_void_p, ctypes.POINTER(_MONITORINFO)]
+
+        best = []   # [(area, _RECT)], largest matching top-level window wins
+        def enum_proc(hwnd, _lparam):
+            if not user32.IsWindowVisible(hwnd):
+                return True
+            pid = DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            if pid.value not in valorant_pids:
+                return True
+            rect = _RECT()
+            if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+                return True
+            w, h = rect.right - rect.left, rect.bottom - rect.top
+            if w <= 0 or h <= 0:
+                return True
+            if not best or w * h > best[0][0]:
+                best[:] = [(w * h, rect)]
+            return True
+
+        user32.EnumWindows(WNDENUMPROC(enum_proc), 0)
+        if not best:
+            return None
+
+        hmon = user32.MonitorFromRect(ctypes.byref(best[0][1]), MONITOR_DEFAULTTONEAREST)
+        if not hmon:
+            return None
+        info = _MONITORINFO()
+        info.cbSize = ctypes.sizeof(_MONITORINFO)
+        if not user32.GetMonitorInfoW(hmon, ctypes.byref(info)):
+            return None
+        m = info.rcMonitor
+        return (m.left, m.top, m.right, m.bottom)
+    except Exception:
+        return None
+
+
 def is_call_app(source_id):
     sid = (source_id or "").lower()
     return any(k in sid for k in CALL_APP_KEYWORDS)
@@ -932,19 +1007,27 @@ class Controller:
                 if (self.game_running and self.in_match and self.round_active
                         and not self.player_dead
                         and (time.monotonic() - self.round_started_at) >= 2.0):
-                    shot = ImageGrab.grab()
+                    # Grab the monitor VALORANT is actually on, not just the primary one,
+                    # so detection still works when the game runs on a secondary display.
+                    # Falls back to the primary monitor if that can't be determined.
+                    monitor_rect = valorant_monitor_rect()
+                    if monitor_rect:
+                        shot = ImageGrab.grab(bbox=monitor_rect, all_screens=True)
+                    else:
+                        shot = ImageGrab.grab()
                     w, h = shot.size
                     shot = shot.crop((int(w * 0.08), int(h * 0.05), int(w * 0.92), int(h * 0.92)))
                     out = BytesIO()
                     shot.save(out, format="BMP")
                     text = await self._ocr_recognize(engine, out.getvalue())
                     upper_text = text.upper()
-                    compact = re.sub(r"[^A-Z0-9]", "", upper_text)
-                    # Windows OCR may put a space/punctuation between words, or
-                    # return each word separately. Support both representations.
+                    # Windows OCR may put a space/punctuation between words, or merge them into
+                    # one token with no space. Support both representations, but require "KILLED"
+                    # and "BY" to be whole words/tokens: matching a bare substring of the whole
+                    # screen's text (e.g. "...SKILLED BY nature...") would false-positive.
                     tokens = re.findall(r"[A-Z0-9]+", upper_text)
                     has_death_banner = (
-                        "KILLEDBY" in compact
+                        "KILLEDBY" in tokens
                         or any(
                             tokens[i] == "KILLED" and tokens[i + 1] == "BY"
                             for i in range(len(tokens) - 1)
