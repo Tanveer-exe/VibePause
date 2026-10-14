@@ -1016,7 +1016,22 @@ class Controller:
                     else:
                         shot = ImageGrab.grab()
                     w, h = shot.size
+                    # Blank out VALORANT's kill feed (top-right corner; lists every kill in the
+                    # match as "PlayerName [weapon icon] PlayerName", no "KILLED"/"BY" text today)
+                    # before OCR ever sees it. This is defense in depth: it protects the match
+                    # purely by screen position, not by today's wording, in case a future
+                    # VALORANT patch ever adds text there. The death banner we're looking for is
+                    # top-center, well clear of this corner, so nothing we need is lost.
+                    ImageDraw.Draw(shot).rectangle((int(w * 0.68), 0, w, int(h * 0.25)), fill=(0, 0, 0))
                     shot = shot.crop((int(w * 0.08), int(h * 0.05), int(w * 0.92), int(h * 0.92)))
+                    # At low resolutions (720p and below, or a downscaled capture) the death
+                    # banner's text can be too small for reliable OCR. Upscale up to 2x so the
+                    # text is at least ~1600px wide, which is comfortably within what Windows OCR
+                    # reads well. No-op at 1080p and above, where the crop is already wide enough.
+                    cw, ch = shot.size
+                    if cw and cw < 1600:
+                        scale = min(2.0, 1600 / cw)
+                        shot = shot.resize((round(cw * scale), round(ch * scale)), Image.Resampling.LANCZOS)
                     out = BytesIO()
                     shot.save(out, format="BMP")
                     text = await self._ocr_recognize(engine, out.getvalue())
