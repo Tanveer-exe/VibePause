@@ -1002,8 +1002,8 @@ class Controller:
         while not stop_event.is_set():
             try:
                 # OCR only during an active combat round; this avoids scanning the desktop
-                # during the lobby and limits CPU use. Crop away screen edges but retain the
-                # central death banner, then encode as BMP for Windows.Media.Ocr.
+                # during the lobby and limits CPU use. Crop to the right-hand HUD column,
+                # then encode as BMP for Windows.Media.Ocr.
                 if (self.game_running and self.in_match and self.round_active
                         and not self.player_dead
                         and (time.monotonic() - self.round_started_at) >= 2.0):
@@ -1016,21 +1016,23 @@ class Controller:
                     else:
                         shot = ImageGrab.grab()
                     w, h = shot.size
-                    # Blank out VALORANT's kill feed (top-right corner; lists every kill in the
-                    # match as "PlayerName [weapon icon] PlayerName", no "KILLED"/"BY" text today)
-                    # before OCR ever sees it. This is defense in depth: it protects the match
-                    # purely by screen position, not by today's wording, in case a future
-                    # VALORANT patch ever adds text there. The death banner we're looking for is
-                    # top-center, well clear of this corner, so nothing we need is lost.
-                    ImageDraw.Draw(shot).rectangle((int(w * 0.68), 0, w, int(h * 0.25)), fill=(0, 0, 0))
-                    shot = shot.crop((int(w * 0.08), int(h * 0.05), int(w * 0.92), int(h * 0.92)))
-                    # At low resolutions (720p and below, or a downscaled capture) the death
-                    # banner's text can be too small for reliable OCR. Upscale up to 2x so the
-                    # text is at least ~1600px wide, which is comfortably within what Windows OCR
-                    # reads well. No-op at 1080p and above, where the crop is already wide enough.
+                    # On death, VALORANT's "KILLED BY" panel appears in the right-hand HUD
+                    # column, directly below the kill feed - NOT centered on screen. Its exact
+                    # vertical offset moves with how many kill-feed rows happen to be showing
+                    # at that moment (confirmed from real screenshots), so this crops a tall,
+                    # generous right-hand column instead of a narrow band at a fixed height.
+                    # The kill feed above it reads "PlayerName [weapon icon] PlayerName" with
+                    # no "KILLED"/"BY" text (confirmed), and Combat Report below it says things
+                    # like "154 KILLED" or "40 KILLED YOU", never "KILLED" immediately followed
+                    # by "BY" - so including both in the crop carries no false-positive risk.
+                    shot = shot.crop((int(w * 0.70), int(h * 0.08), w, int(h * 0.65)))
+                    # This column is a modest fraction of the screen, so its text can still be
+                    # small in absolute pixels even at high resolutions. Upscale toward a
+                    # comfortable floor for Windows OCR; the region is small enough that a
+                    # larger scale factor here is still cheap.
                     cw, ch = shot.size
-                    if cw and cw < 1600:
-                        scale = min(2.0, 1600 / cw)
+                    if cw and cw < 1400:
+                        scale = min(5.0, 1400 / cw)
                         shot = shot.resize((round(cw * scale), round(ch * scale)), Image.Resampling.LANCZOS)
                     out = BytesIO()
                     shot.save(out, format="BMP")
