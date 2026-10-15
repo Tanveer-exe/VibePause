@@ -16,7 +16,7 @@ except Exception:
 
 APP_NAME = "VibePause"
 APP_ID = "tanveer-exe.VibePause"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 UPDATE_REPO = "Tanveer-exe/VibePause"
 UPDATE_ASSET = "VibePause_Setup.exe"
 # Bundled resources: PyInstaller extracts/places them under sys._MEIPASS.
@@ -433,6 +433,16 @@ UPDATE_API = f"https://api.github.com/repos/{UPDATE_REPO}/releases?per_page=20"
 class UpdateError(Exception):
     """A real problem (network, GitHub, missing installer) with a message safe to show the user."""
 
+class RepoPrivateError(UpdateError):
+    """GitHub answered 404 to the anonymous release request: the repo is private (or gone).
+    check_for_update() reacts to this by using the Google Drive fallback instead."""
+
+# Google Drive fallback, used only while the GitHub repo is private. Both files are shared as
+# "Anyone with the link". Re-upload them with Drive's "Manage versions" so these IDs never change.
+DRIVE_MANIFEST_ID = "1zRpcOnWckaOE3PID73R-q7P7GgNCWC1T"    # latest.json (made by make_latest.py)
+DRIVE_INSTALLER_ID = "1Ok9FeCHM-zyra-fuBhrJcBFkHRqiZpCh"   # VibePause_Setup.exe
+DRIVE_DOWNLOAD = "https://drive.google.com/uc?export=download&confirm=t&id={}"
+
 def version_tuple(value):
     """'v0.1.1' -> (0, 1, 1). Ignores a leading v and any suffix such as '-alpha'."""
     m = re.match(r"^\s*[vV]?(\d+(?:\.\d+)*)", str(value or ""))
@@ -522,6 +532,8 @@ def fetch_releases(timeout=UPDATE_CHECK_TIMEOUT):
             data = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         write_error_log(f"Update check: HTTP {e.code}")
+        if e.code == 404:
+            raise RepoPrivateError("GitHub repository is not public.")
         raise UpdateError("Can't check for updates right now. Try again later.")
     except (urllib.error.URLError, TimeoutError, OSError) as e:
         write_error_log(f"Update check: {type(e).__name__}: {e}")
@@ -531,6 +543,44 @@ def fetch_releases(timeout=UPDATE_CHECK_TIMEOUT):
     if not isinstance(data, list):
         raise UpdateError("Can't check for updates right now. Try again later.")
     return data
+
+def fetch_drive_update(current_version, timeout=UPDATE_CHECK_TIMEOUT):
+    """Google Drive fallback. Reads latest.json and returns the same tuple pick_update() does."""
+    req = urllib.request.Request(DRIVE_DOWNLOAD.format(DRIVE_MANIFEST_ID),
+                                 headers={"User-Agent": f"VibePause/{APP_VERSION}"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read(65536).decode("utf-8-sig"))
+        if not isinstance(data, dict):
+            raise ValueError("manifest is not an object")
+        latest = str(data.get("version", "")).strip().lstrip("vV")
+        latest_v = version_tuple(latest)
+        if latest_v is None:
+            raise ValueError("manifest has no valid version")
+        size = int(data.get("size") or 0)
+    except urllib.error.HTTPError as e:
+        write_error_log(f"Drive update check: HTTP {e.code}")
+        raise UpdateError("Can't check for updates right now. Try again later.")
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        write_error_log(f"Drive update check: {type(e).__name__}: {e}")
+        raise UpdateError("Can't check for updates. Check your internet connection.")
+    except (ValueError, TypeError) as e:
+        write_error_log(f"Drive update check: bad manifest: {e}")
+        raise UpdateError("Can't check for updates right now. Try again later.")
+    if latest_v <= (version_tuple(current_version) or (0,)):
+        return ("current", latest)
+    sha = str(data.get("sha256", "")).strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{64}", sha):     # Drive has no digest of its own, so insist on ours
+        raise UpdateError(f"VibePause {latest} was published, but its update information is incomplete.")
+    notes = clean_release_notes(data.get("notes"))
+    return ("update", latest, DRIVE_DOWNLOAD.format(DRIVE_INSTALLER_ID), size, "sha256:" + sha, notes)
+
+def check_for_update(current_version):
+    """GitHub first. If the repo is private (404 for anonymous requests), use Google Drive instead."""
+    try:
+        return pick_update(fetch_releases(), current_version)
+    except RepoPrivateError:
+        return fetch_drive_update(current_version)
 
 def verify_installer(path, digest):
     with open(path, "rb") as fh:
@@ -2741,7 +2791,7 @@ class App:
 
     def _check_for_updates_worker(self):
         try:
-            result = pick_update(fetch_releases(), APP_VERSION)
+            result = check_for_update(APP_VERSION)
             if result[0] == "update":
                 self.event("update", ("available",) + result[1:])
             else:
@@ -2832,7 +2882,7 @@ class App:
     def _silent_check_for_updates(self):
         """Silently check for updates. Returns (update_available, version, url, size, digest), or None if the check failed."""
         try:
-            result = pick_update(fetch_releases(), APP_VERSION)
+            result = check_for_update(APP_VERSION)
             if result[0] == "update":
                 return True, result[1], result[2], result[3], result[4], result[5]
             return False, result[1], "", 0, "", ""
