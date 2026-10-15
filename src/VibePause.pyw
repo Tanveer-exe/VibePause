@@ -16,7 +16,7 @@ except Exception:
 
 APP_NAME = "VibePause"
 APP_ID = "tanveer-exe.VibePause"
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.1"
 UPDATE_REPO = "Tanveer-exe/VibePause"
 UPDATE_ASSET = "VibePause_Setup.exe"
 # Bundled resources: PyInstaller extracts/places them under sys._MEIPASS.
@@ -633,99 +633,12 @@ def _session_id(session):
         return ""
 
 _manager_cache = None
-_media_art_cache = {}
 
 async def _get_manager():
     global _manager_cache
     if _manager_cache is None:
         _manager_cache = await _SessionManager.request_async()
     return _manager_cache
-
-
-async def _media_snapshot():
-    """Read the active non-call media session without blocking Tk."""
-    try:
-        mgr = await _get_manager()
-        sessions = [s for s in mgr.get_sessions() if not is_call_app(_session_id(s))]
-        current = None
-        try:
-            current = mgr.get_current_session()
-        except Exception:
-            pass
-        if current is None or is_call_app(_session_id(current)):
-            current = next(iter(sessions), None)
-        if current is None:
-            return {"title": "", "artist": "", "playing": False, "key": None,
-                    "controls": {"previous": False, "toggle": False, "next": False}, "artwork": None}
-        props = await current.try_get_media_properties_async()
-        info = current.get_playback_info()
-        status = info.playback_status == _PlaybackStatus.PLAYING
-        controls = info.controls
-        title = str(getattr(props, "title", "") or "")
-        artist = str(getattr(props, "artist", "") or "")
-        key = (_session_id(current), title, artist, str(getattr(props, "album_title", "") or ""))
-        artwork = _media_art_cache.get(key)
-        if key not in _media_art_cache:
-            _media_art_cache.clear()
-            artwork = None
-            try:
-                thumbnail = getattr(props, "thumbnail", None)
-                if thumbnail is not None:
-                    from winrt.windows.storage.streams import DataReader
-                    stream = await thumbnail.open_read_async()
-                    reader = DataReader(stream)
-                    size = int(stream.size)
-                    if 0 < size <= 8 * 1024 * 1024:
-                        await reader.load_async(size)
-                        raw = bytearray(size)
-                        reader.read_bytes(raw)
-                        artwork = Image.open(BytesIO(raw)).convert("RGB")
-                    _media_art_cache[key] = artwork
-            except Exception as e:
-                write_error_log(f"Reading media artwork: {type(e).__name__}: {e}")
-                _media_art_cache[key] = None
-        return {"title": title, "artist": artist, "playing": status, "key": key,
-                "artwork": artwork,
-                "controls": {"previous": bool(getattr(controls, "is_previous_enabled", False)),
-                             "toggle": bool(getattr(controls, "is_play_pause_toggle_enabled", False)),
-                             "next": bool(getattr(controls, "is_next_enabled", False))},
-                "session": current}
-    except Exception as e:
-        write_error_log(f"Reading media session: {type(e).__name__}: {e}")
-        return {"title": "", "artist": "", "playing": False, "key": None,
-                "controls": {"previous": False, "toggle": False, "next": False}, "artwork": None}
-
-
-async def _media_hook(session, callback):
-    try:
-        session.add_media_properties_changed(callback)
-        session.add_playback_info_changed(callback)
-        return True
-    except Exception as e:
-        write_error_log(f"Subscribing to media events: {type(e).__name__}: {e}")
-        return False
-
-
-async def _media_control(action):
-    try:
-        mgr = await _get_manager()
-        sessions = [s for s in mgr.get_sessions() if not is_call_app(_session_id(s))]
-        try:
-            current = mgr.get_current_session()
-        except Exception:
-            current = None
-        if current is None or is_call_app(_session_id(current)):
-            current = next(iter(sessions), None)
-        if current is None:
-            return False
-        if action == "previous":
-            return bool(await current.try_skip_previous_async())
-        if action == "next":
-            return bool(await current.try_skip_next_async())
-        return bool(await current.try_toggle_play_pause_async())
-    except Exception as e:
-        write_error_log(f"Media control {action}: {type(e).__name__}: {e}")
-        return False
 
 _paused_ids = set()
 
@@ -1774,7 +1687,6 @@ class App:
         self.running = False
         self.startup = False
         self.close_to_tray = True
-        self.spinning_cover = True
         self.hotkey = ""   # global on/off hotkey; empty = none (default)
         self.hotkeys = HotkeyListener(lambda: self.event("cmd", "toggle_active"))
         self.mode = MODE_PAUSE                      # "pause" (play/pause) or "volume" (per-event volume)
@@ -1867,7 +1779,6 @@ class App:
                 self.active = clean_bool(d.get("active"), True)
                 self.startup = clean_bool(d.get("startup"), False)
                 self.close_to_tray = clean_bool(d.get("close_to_tray"), True)
-                self.spinning_cover = clean_bool(d.get("spinning_cover"), True)
                 saved_hotkey = d.get("hotkey", "")
                 self.hotkey = saved_hotkey if parse_hotkey(saved_hotkey) else ""
                 lang = d.get("language")
@@ -1895,7 +1806,6 @@ class App:
             "active": self.active,
             "startup": self.startup,
             "close_to_tray": self.close_to_tray,
-            "spinning_cover": self.spinning_cover,
             "auto_update_enabled": self.auto_update_enabled,
             "hotkey": self.hotkey,
             "language": self.language,
@@ -2211,7 +2121,6 @@ class App:
                             fill=self.FAINT, font=self.F(8))
         self.cv.bind("<ButtonPress-1>", self.canvas_press)
         self.cv.bind("<B1-Motion>", self.canvas_drag)
-        self.root.bind("<Map>", self.resume_animations, add="+")
         if not self._bars_running:
             self._bars_running = True
             self.animate_bars()
@@ -2383,147 +2292,36 @@ class App:
 
     def build_hero_card(self):
         cv = self.cv
-        # Compact now-playing card, painted on the same ScaledCanvas as the rest of the UI.
-        self.music_pill_bg = self.photo(self.gi(250, 28, 14, fill=(255, 255, 255, 14),
-                                                 border=(255, 255, 255, 36)))
-        cv.create_image(52, 104, image=self.music_pill_bg, anchor="nw")
-        self.music_pill_bars = []
-        for i in range(4):
-            x = 66 + i * 5
-            self.music_pill_bars.append(cv.create_line(x, 114, x, 122, width=2, fill=self.GREEN))
-        self.music_pill_text = cv.create_text(92, 118, text=tr("Waiting for VALORANT"),
-                                               fill=self.GREEN, font=self.F(9, True), anchor="w")
-        # Keep the original gradient ring artwork; the disc itself is swapped as PhotoImages.
-        self.music_disc_item = cv.create_image(self.RING_CENTER[0], self.RING_CENTER[1], image="", anchor="center")
-        self.music_disc_label = cv.create_text(178, 388, text=tr("Nothing playing"), fill=self.TEXT,
-                                                font=self.F(12, True), width=250, justify="center")
-        self.music_artist_label = cv.create_text(178, 412, text="", fill=self.MUTED, font=self.F(9),
-                                                 width=250, justify="center")
-        self.music_buttons = {}
-        for tag, label, x, d in (("music_prev", "‹", 112, 38), ("music_toggle", "PLAY", 178, 50),
-                                 ("music_next", "›", 244, 38)):
-            fill = (47, 227, 198, 62) if tag == "music_toggle" else (255, 255, 255, 18)
-            border = (80, 240, 215, 130) if tag == "music_toggle" else (255, 255, 255, 44)
-            normal = self.photo(self.gi(d, d, d // 2, fill=fill, border=border, sheen=8))
-            hot = self.photo(self.gi(d, d, d // 2, fill=(fill[0], fill[1], fill[2], min(255, fill[3]+35)),
-                                     border=border, sheen=8))
-            bg = cv.create_image(x, 484, image=normal, tags=(tag, "nodrag"))
-            txt = cv.create_text(x+d//2, 484, text=label, fill=self.TEXT, font=self.F(10, True),
-                                 tags=(tag, "nodrag"))
-            self.music_buttons[tag] = {"bg": bg, "text": txt, "normal": normal, "hot": hot, "enabled": True}
-            command = {"music_prev": lambda: self.media_command("previous"),
-                       "music_toggle": lambda: self.media_command("toggle"),
-                       "music_next": lambda: self.media_command("next")}[tag]
-            self.make_clickable(tag, command, lambda on, t=tag: cv.itemconfig(
-                self.music_buttons[t]["bg"], image=self.music_buttons[t]["hot" if on else "normal"]))
-        self._disc_frames = []
-        self._disc_track_key = None
-        self._disc_frame_index = 0
-        self._disc_angle = 0.0
-        self._disc_last_tick = time.monotonic()
-        self._disc_ready = False
-        self._music_title = ""
-        self._music_artist = ""
-        self._music_playing = False
-        self._music_supported = {}
-        self._game_status = "Waiting for VALORANT"
-        self._game_events = []
+        cx, cy = self.RING_CENTER
+        cv.create_text(cx, cy - 32, text=" ".join(tr("NOW")), fill=self.GREEN, font=self.F(9, True))
+        hero_text = tr(self._hero_event or "Waiting for VALORANT")
+        self.hero_event_item = cv.create_text(cx, cy + 8, text=hero_text, fill=self.TEXT,
+                                         font=self.F(self.hero_font_size(hero_text)), width=150, justify="center")
+        self.bar_items = []
+        base_y = 376
+        for i in range(10):
+            color = mix_color((47, 227, 198), (150, 96, 255), i / 9) if i < 5 else mix_color((150, 96, 255), (255, 93, 143), (i - 5) / 4)
+            x = cx - 58.5 + i * 13
+            self.bar_items.append(cv.create_line(x, base_y - 5, x, base_y + 5, width=6, capstyle="round", fill=color))
+        self.bar_x = [cx - 58.5 + i * 13 for i in range(10)]
+        self.bar_y = base_y
+        self.hero_music = cv.create_text(cx, 424, text=tr("Checking media..."), fill=self.MUTED, font=self.F(10))
 
-    def set_music_card(self, data):
-        if not isinstance(data, dict):
-            return
-        title, artist = data.get("title") or "", data.get("artist") or ""
-        playing = bool(data.get("playing"))
-        key = data.get("key") or (title, artist)
-        if key != self._disc_track_key:
-            self._disc_track_key = key
-            self._disc_frames = []
-            self._disc_ready = False
-            self._disc_frame_index = 0
-            self._music_title, self._music_artist = title, artist
-            art = data.get("artwork")
-            threading.Thread(target=self.prepare_disc_frames, args=(art, key), daemon=True).start()
-        self._music_playing = playing
-        self.cv.itemconfig(self.music_disc_label, text=self.fit(title or tr("Nothing playing"), self.sx(250),
-                                                                self.font_for(12, True)))
-        self.cv.itemconfig(self.music_artist_label, text=artist)
-        toggle = self.music_buttons.get("music_toggle")
-        if toggle:
-            self.cv.itemconfig(toggle["text"], text=tr("PAUSE") if playing else tr("PLAY"))
-        controls = data.get("controls") or {}
-        for key_name, supported in (("music_prev", controls.get("previous", False)),
-                                    ("music_toggle", controls.get("toggle", False)),
-                                    ("music_next", controls.get("next", False))):
-            b = self.music_buttons.get(key_name)
-            if b:
-                b["enabled"] = bool(supported)
-                color = self.TEXT if supported else self.FAINT
-                self.cv.itemconfig(b["text"], fill=color)
-                self.cv.itemconfig(b["bg"], state="normal" if supported else "disabled")
-        self.refresh_music_pill()
-
-    def prepare_disc_frames(self, artwork, key):
-        try:
-            size = self.sx(164)
-            if artwork is None:
-                artwork = Image.new("RGB", (size, size), (31, 35, 62))
-                draw = ImageDraw.Draw(artwork)
-                draw.ellipse((size*.15, size*.15, size*.85, size*.85), fill=(53, 67, 104))
-            else:
-                artwork = artwork.convert("RGB")
-            side = min(artwork.size)
-            left, top = (artwork.width-side)//2, (artwork.height-side)//2
-            artwork = artwork.crop((left, top, left+side, top+side)).resize((size, size), Image.Resampling.LANCZOS)
-            # A circular alpha mask, vinyl grooves, and the centre label are pre-rendered once.
-            mask = Image.new("L", (size, size), 0)
-            ImageDraw.Draw(mask).ellipse((1, 1, size-2, size-2), fill=255)
-            base = artwork.convert("RGBA")
-            base.putalpha(mask)
-            draw = ImageDraw.Draw(base, "RGBA")
-            for r in (size*.37, size*.40, size*.44, size*.47):
-                draw.ellipse((size/2-r, size/2-r, size/2+r, size/2+r), outline=(255,255,255,35), width=max(1,self.sx(1)))
-            hole = size * .09
-            draw.ellipse((size/2-hole, size/2-hole, size/2+hole, size/2+hole),
-                         fill=(12, 15, 31, 255), outline=(255,255,255,150), width=max(1,self.sx(1)))
-            frames = []
-            for angle in range(0, 360, 4):
-                frames.append(base.rotate(angle, resample=Image.Resampling.BICUBIC, expand=False))
-            self.event("disc_frames", (key, frames))
-        except Exception as e:
-            write_error_log(f"Preparing music disc: {type(e).__name__}: {e}")
-
-    def refresh_music_pill(self):
-        # This is a compact presentation of the same canonical game state shown on the status card.
-        status = self._game_status
-        if self.controller.paused_by_us:
-            label = tr("Paused for your match")
-        elif status in ("In match", "Dead - music paused", "Round over - music resumed"):
-            label = tr("In match")
-        elif status == "Match ended":
-            label = tr("Match ended")
-        elif status == "In the menu":
-            label = tr("In the menu")
-        elif not self._music_title:
-            label = tr("Nothing playing")
-        else:
-            label = tr("Waiting for VALORANT")
-        color = "#ff8eb1" if self.controller.paused_by_us else self.GREEN
-        self.cv.itemconfig(self.music_pill_text, text=self.fit(label, self.sx(190), self.font_for(9, True)), fill=color)
-        for item in self.music_pill_bars:
-            self.cv.itemconfig(item, fill=color)
-
-    def media_command(self, action):
-        if not self._music_supported.get(action, False):
-            return
-        def work():
-            try:
-                result = MEDIA.run(_media_control(action))
-                if result is False:
-                    self.event("system", f"Media command not supported: {action}")
-                self.event("media_refresh", None)
-            except Exception as e:
-                write_error_log(f"Media command {action}: {type(e).__name__}: {e}")
-        threading.Thread(target=work, daemon=True).start()
+        for tag, label, icon, fill, border, color, x0, command in (
+            ("b_play", "Play", "play", (47, 227, 198, 52), (80, 240, 215, 115), self.GREEN, 52, self.force_play),
+            ("b_pause", "Pause", "pause", (255, 93, 143, 56), (255, 125, 170, 120), self.RED, 182, self.force_pause),
+        ):
+            w, h, y0 = 122, 48, 546
+            normal = self.photo(self.gi(w, h, 18, fill=fill, border=border))
+            hot = self.photo(self.gi(w, h, 18, fill=fill[:3] + (fill[3] + 36,), border=border))
+            bg = cv.create_image(x0, y0, image=normal, anchor="nw", tags=(tag, "nodrag"))
+            glyph = self.img(icon)
+            if glyph:
+                cv.create_image(x0 + 34, y0 + h // 2, image=glyph, tags=(tag, "nodrag"))
+            label_text = tr(label)
+            cv.create_text(x0 + 52, y0 + h // 2, text=label_text, fill=color,
+                           font=self.F(self.fit_size(label_text, w - 52 - 10, 11, True), True), anchor="w", tags=(tag, "nodrag"))
+            self.make_clickable(tag, command, lambda on, b=bg, n=normal, ho=hot: cv.itemconfig(b, image=ho if on else n))
 
     def build_events(self):
         cv = self.cv
@@ -2727,53 +2525,29 @@ class App:
             if icon:
                 cv.create_image(x + 10, y + 18, image=icon, anchor="w")
             cv.create_text(x + 36, y + 18, text=label, fill=self.TEXT, font=self.F(9), anchor="w")
+        cv.create_text(374, 592, text=tr("Any Windows media app. Call apps are skipped."), fill=self.MUTED,
+                       font=self.F(8), anchor="w", width=290)
 
     def build_activity_card(self):
         cv = self.cv
-        cv.create_text(712, 474, text=tr("Game status"), fill=self.TEXT, font=self.F(13, True), anchor="w")
-        self.game_status_item = cv.create_text(712, 508, text=tr("Waiting for VALORANT"), fill=self.TEXT,
-                                               font=self.F(12, True), anchor="w", width=275)
-        self.game_event_items = [cv.create_text(712, 542 + i * 20, text="", anchor="w",
-                                                 font=self.F(8), fill=self.MUTED, width=280)
-                                 for i in range(3)]
+        cv.create_text(712, 474, text=tr("Live activity"), fill=self.TEXT, font=self.F(13, True), anchor="w")
+        clear = cv.create_text(990, 474, text=tr("Clear"), fill=self.MUTED, font=self.F(9, True), anchor="e", tags=("clear", "nodrag"))
+        self.make_clickable("clear", self.clear_log, lambda on: cv.itemconfig(clear, fill=self.TEXT if on else self.MUTED))
+        self.log_font = self.font_for(9)
+        self.log_items = [cv.create_text(712, 504 + i * 21, text="", anchor="w", font=self.F(9), fill=self.MUTED)
+                          for i in range(self.LOG_ROWS)]
 
     def refresh_log(self):
-        # This card deliberately contains game events only. log_lines remains intact for diagnostics.
-        if not hasattr(self, "game_event_items"):
-            return
-        self.cv.itemconfig(self.game_status_item, text=tr(self._game_status))
-        now = time.time()
-        for i, item in enumerate(self.game_event_items):
-            if i < len(self._game_events):
-                stamp, message = self._game_events[i]
-                age = max(0, int(now - stamp))
-                when = (f"{age // 60} min ago" if age >= 60 else (f"{age} sec ago" if age > 4 else tr("Just now")))
-                line = f"{when}  {tr(message)}"
-            else:
-                line = ""
-            self.cv.itemconfig(item, text=self.fit(line, self.sx(280), self.font_for(8)))
-
-    def resume_animations(self, _event=None):
-        if not self._bars_running:
-            self._bars_running = True
-            self._disc_last_tick = time.monotonic()
-            self.animate_bars()
+        newest = self.log_lines[::-1][:self.LOG_ROWS]
+        for i, item in enumerate(self.log_items):
+            text = self.fit(newest[i], self.sx(282), self.log_font) if i < len(newest) else ""
+            self.cv.itemconfig(item, text=text, fill=self.TEXT if i == 0 else "#b4b2d6")
 
     def animate_bars(self):
         try:
-            if not self.root.winfo_viewable():
-                self._bars_running = False
-                return
-            t = time.monotonic()
-            dt = max(0.0, min(0.1, t - self._disc_last_tick))
-            self._disc_last_tick = t
-            if self._disc_frames and self._music_playing and self.spinning_cover:
-                self._disc_angle = (self._disc_angle + 360.0 * dt / 9.0) % 360.0
-                self._disc_frame_index = int(self._disc_angle / 4) % len(self._disc_frames)
-                self.cv.itemconfig(self.music_disc_item, image=self._disc_frames[self._disc_frame_index])
-            elif self._disc_frames and not self.spinning_cover:
-                self.cv.itemconfig(self.music_disc_item, image=self._disc_frames[0])
-            for i, item in enumerate(getattr(self, "bar_items", [])):
+            if self.root.winfo_viewable():
+                t = time.monotonic()
+                for i, item in enumerate(self.bar_items):
                     if self.bars_active:
                         half = 5 + 22 * abs(math.sin(t * 2.3 + i * 0.9)) * (0.55 + 0.45 * abs(math.sin(t * 0.9 + i)))
                     else:
@@ -2791,9 +2565,14 @@ class App:
 
     def set_media_state(self, state):
         self._media_state = state
-        self.bars_active = state == "playing"
-        if hasattr(self, "music_pill_text"):
-            self.refresh_music_pill()
+        text, color, active = {
+            "playing": ("Music is playing", self.GREEN, True),
+            "paused": ("Music is paused", "#ffb3c8", False),
+            "none": ("No music app open", self.MUTED, False),
+        }.get(state, ("Media status unavailable", self.MUTED, False))
+        text = tr(text)
+        self.bars_active = active
+        self.cv.itemconfig(self.hero_music, text=text, fill=color)
 
     def start_media_watch(self):
         if self._media_watch_started:
@@ -2805,33 +2584,13 @@ class App:
         if not GSMTC_AVAILABLE:
             self.event("media", "unknown")
             return
-        last_state = None
-        last_key = object()
-        hooked_sessions = set()
+        last = None
         while True:
-            try:
-                snapshot = MEDIA.run(_media_snapshot(), timeout=8)
-                session = snapshot.get("session")
-                sid = snapshot.get("key")
-                if session is not None and sid not in hooked_sessions:
-                    callback = lambda *_args: self.event("media_refresh", None)
-                    try:
-                        if MEDIA.run(_media_hook(session, callback), timeout=4):
-                            hooked_sessions.add(sid)
-                    except Exception as e:
-                        write_error_log(f"Subscribing to media events: {type(e).__name__}: {e}")
-                key = snapshot.get("key")
-                state = "playing" if snapshot.get("playing") else ("paused" if key else "none")
-                if key != last_key or state != last_state:
-                    last_key, last_state = key, state
-                    self.event("media_card", snapshot)
-                    self.event("media", state)
-                else:
-                    # Light polling is a fallback for missed WinRT events.
-                    self.event("media_card", snapshot)
-            except Exception as e:
-                write_error_log(f"Media polling: {type(e).__name__}: {e}")
-            time.sleep(2.0)
+            state = media_status() or "unknown"
+            if state != last:
+                last = state
+                self.event("media", state)
+            time.sleep(3)
 
     def trash_photo(self):
         cache = self.__dict__.setdefault("_settings_cache", {})
@@ -3005,25 +2764,13 @@ class App:
         hk_hint = cv.create_text(24, 296, text=HK_HINT, fill=self.MUTED, font=self.F(8), anchor="nw", width=282)
         show_hotkey()
 
-        # ---- Spinning cover ----
-        spin_label = cv.create_text(24, 324, text=tr("Spinning cover"), fill=self.TEXT, font=self.F(10), anchor="w")
-        spin_img = cv.create_image(W - 24 - 40, 313, image=self.switch_photo(self.spinning_cover), anchor="nw", tags=("spin",))
-        cv.create_image(0, 300, image=self.photo_clear(self.sx(W), self.sx(42)), anchor="nw", tags=("spin",))
-        def flip_spin():
-            self.spinning_cover = not self.spinning_cover
-            cv.itemconfig(spin_img, image=self.switch_photo(self.spinning_cover))
-            if not self.spinning_cover and self._disc_frames:
-                self.cv.itemconfig(self.music_disc_item, image=self._disc_frames[0])
-            self.save()
-        self.make_clickable("spin", flip_spin, cv=cv)
-
         # ---- Updates + support ----
-        button("upd", 350, tr("Check for updates"), self.check_for_updates, (255, 255, 255, 18), (255, 255, 255, 50), self.TEXT)
-        self.update_status_item = cv.create_text(24, 402, text=f"VibePause {APP_VERSION}", fill=self.MUTED,
+        button("upd", 338, tr("Check for updates"), self.check_for_updates, (255, 255, 255, 18), (255, 255, 255, 50), self.TEXT)
+        self.update_status_item = cv.create_text(24, 392, text=f"VibePause {APP_VERSION}", fill=self.MUTED,
                                                  font=self.F(8), anchor="nw", width=282)
-        button("logdir", 432, tr("Open log folder"), self.open_log_folder, (255, 255, 255, 14), (255, 255, 255, 44),
+        button("logdir", 428, tr("Open log folder"), self.open_log_folder, (255, 255, 255, 14), (255, 255, 255, 44),
                self.TEXT, x=24, w=137, h=36, size=9)
-        button("diag", 432, tr("Copy diagnostics"), self.copy_diagnostics, (255, 255, 255, 14), (255, 255, 255, 44),
+        button("diag", 428, tr("Copy diagnostics"), self.copy_diagnostics, (255, 255, 255, 14), (255, 255, 255, 44),
                self.TEXT, x=169, w=137, h=36, size=9)
         button("save", 474, tr("Save settings"), self.save_settings_page, (255, 93, 143, 62), (255, 125, 170, 125), self.RED)
 
@@ -3694,24 +3441,8 @@ class App:
         elif kind == "event":
             event, action = value
             self._hero_event = event
-            # Preserve diagnostics' Recent activity while presenting game-only history in the card.
+            self.set_hero_text(tr(event))
             self.log_line(f"{now}  {tr(event)}  [{tr(action)}]")
-            status_map = {
-                "Match Started": "In match",
-                "Combat Start": "In match",
-                "Player Eliminated": "Dead - music paused" if action == "Pause" else "Player eliminated",
-                "Buy Phase Started": "Round over - music resumed",
-                "Match Ended": "Match ended",
-                "Returned to Lobby": "In the menu",
-                "Agent Selection": "In the menu",
-            }
-            status = status_map.get(event)
-            if status:
-                self._game_status = status
-                self._game_events.insert(0, (time.time(), event))
-                self._game_events = self._game_events[:3]
-                self.refresh_log()
-                self.refresh_music_pill()
         elif kind == "music":
             self.set_music_status(value == "Playing")
             self.log_line(f"{now}  {tr('Music')}: {tr(value)}")
@@ -3719,21 +3450,6 @@ class App:
             self.log_line(f"{now}  {tr('Volume')}: {value}%")
         elif kind == "media":
             self.set_media_state(value)
-        elif kind == "media_card":
-            self._music_supported = (value or {}).get("controls", {})
-            self.set_music_card(value or {})
-        elif kind == "media_refresh":
-            try:
-                self.event("media_card", MEDIA.run(_media_snapshot(), timeout=8))
-            except Exception as e:
-                write_error_log(f"Refreshing media: {type(e).__name__}: {e}")
-        elif kind == "disc_frames":
-            key, frames = value
-            if key == self._disc_track_key:
-                self._disc_frames = [ImageTk.PhotoImage(frame, master=self.root) for frame in frames]
-                self._disc_ready = True
-                if self._disc_frames:
-                    self.cv.itemconfig(self.music_disc_item, image=self._disc_frames[self._disc_frame_index])
         elif kind == "valorant":
             self.valorant_running = bool(value)
             self.status_update()
@@ -3766,7 +3482,8 @@ class App:
     _LOG_TS = re.compile(r"^\d{2}:\d{2}:\d{2}\s+")
 
     def log_line(self, text):
-        # Keep the full diagnostic history even though the visible card is game-only.
+        if not self.log_items:
+            return
         # Collapse back-to-back identical lines (ignoring the timestamp) into one line with a
         # counter, so a repeating failure shows as "... (x5)" instead of filling Live activity.
         key = self._LOG_TS.sub("", text)
