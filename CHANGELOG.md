@@ -1,4 +1,8 @@
 # Changelog
+## 1.0.1
+
+- Add a Google Drive fallback for update checks, used while the GitHub repository is private. Updates are still verified with a SHA-256 checksum.
+
 ## 1.0.0
 
 First full release.
