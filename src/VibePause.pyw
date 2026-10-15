@@ -1306,7 +1306,7 @@ def glass_image(w, h, radius, fill=(255, 255, 255, 18), border=(255, 255, 255, 4
     return Image.alpha_composite(body, edge)
 
 
-def render_aurora(w, h):
+def _render_aurora(w, h):
     s = 4
     sw, sh = w // s, h // s
     base = Image.new("RGBA", (sw, sh), (9, 9, 26, 255))
@@ -1322,6 +1322,20 @@ def render_aurora(w, h):
             (int((cx - rx) * sw), int((cy - ry) * sh), int((cx + rx) * sw), int((cy + ry) * sh)), fill=color)
         base = Image.alpha_composite(base, layer.filter(ImageFilter.GaussianBlur(sw * 0.11)))
     return base.resize((w, h), Image.Resampling.BICUBIC)
+
+
+_AURORA_CACHE = {}
+
+
+def render_aurora(w, h):
+    """Same blurred background every popup uses, cached by size since the blur is the
+    expensive part. Callers get their own copy back, since several of them composite
+    more layers onto the result in place."""
+    cached = _AURORA_CACHE.get((w, h))
+    if cached is None:
+        cached = _render_aurora(w, h)
+        _AURORA_CACHE[(w, h)] = cached
+    return cached.copy()
 
 
 RING_STOPS = (
@@ -1611,7 +1625,6 @@ class App:
         self.actions = DEFAULT_ACTIONS.copy()
         self.action_vars = {}
         self.action_button = {}
-        self.action_stripe = {}
         self.cv = None
         self.imgs = []
         self.chip_imgs = {}
@@ -1643,12 +1656,24 @@ class App:
         self._drag_hwnd = None
         # Auto-update / active state: must exist before build() draws the title bar
         self.auto_update_enabled = True
-        self.auto_update_timer = None
         self.last_update_check = 0
         self.active = True  # VibePause is active by default
         self.legal_accepted = False
         self.valorant_running = False
         self.declined_update = None
+        # Lazily-set state, initialised here so it never needs a getattr(self, ..., default) guard.
+        self._bars_running = False
+        self._status_limit = None
+        self._media_watch_started = False
+        self._update_busy = False
+        self._update_failures = 0
+        self._pending_update = None
+        self._auto_update_running = False
+        self._last_log_key = None
+        self._last_log_count = 1
+        self._legal_win = None
+        self._quit_win = None
+        self.tray_thread = None
         self.load_auto_update_settings()
         self.load()
         self.sync_startup_path()
@@ -2046,7 +2071,7 @@ class App:
                             fill=self.FAINT, font=self.F(8))
         self.cv.bind("<ButtonPress-1>", self.canvas_press)
         self.cv.bind("<B1-Motion>", self.canvas_drag)
-        if not getattr(self, "_bars_running", False):
+        if not self._bars_running:
             self._bars_running = True
             self.animate_bars()
 
@@ -2212,7 +2237,7 @@ class App:
         self.status_text = cv.create_text(x0 + 38, cy, text=self.status_fit(tr("Starting...")), anchor="w", font=font, fill=self.MUTED)
 
     def status_fit(self, text):
-        limit = getattr(self, "_status_limit", None)
+        limit = self._status_limit
         return self.fit(text, limit * self.S, self.font_for(10, True)) if limit else text
 
     def build_hero_card(self):
@@ -2500,7 +2525,7 @@ class App:
         self.cv.itemconfig(self.hero_music, text=text, fill=color)
 
     def start_media_watch(self):
-        if getattr(self, "_media_watch_started", False):
+        if self._media_watch_started:
             return
         self._media_watch_started = True
         threading.Thread(target=self.media_watch, daemon=True).start()
@@ -2593,7 +2618,6 @@ class App:
         entry.bind("<Control-A>", select_all)
         entry.bind("<Return>", lambda e: self.save_settings_page())
         entry.bind("<Button-1>", lambda e: e.widget.focus_set())
-        self.delay_entry = entry
         def focus_entry():
             try:
                 entry.focus_force()
@@ -2702,7 +2726,7 @@ class App:
 
     def check_for_updates(self):
         """Settings > CHECK FOR UPDATES. Runs the network work off the UI thread."""
-        if getattr(self, "_update_busy", False):
+        if self._update_busy:
             return
         self._update_busy = True
         self._set_update_status("Checking for updates...", self.BLUE)
@@ -2781,7 +2805,7 @@ class App:
                     if result is None:
                         # Back off 5m, 10m, 20m ... up to the normal 4h interval instead of
                         # hammering GitHub (and the log) every few minutes.
-                        self._update_failures = getattr(self, "_update_failures", 0) + 1
+                        self._update_failures += 1
                         delay = min(UPDATE_CHECK_INTERVAL, UPDATE_RETRY_DELAY * 2 ** min(self._update_failures - 1, 10))
                         self.last_update_check = current_time - UPDATE_CHECK_INTERVAL + delay
                     else:
@@ -2791,9 +2815,9 @@ class App:
 
                 if stop.is_set():
                     break
-                pending = getattr(self, "_pending_update", None)
+                pending = self._pending_update
                 if (pending and pending[0] != self.declined_update and not self.valorant_running
-                        and not getattr(self, "_update_busy", False)):
+                        and not self._update_busy):
                     self._pending_update = None
                     self.event("update_prompt", pending)
 
@@ -2898,7 +2922,7 @@ class App:
         """Start the background update checking thread"""
         if not self.legal_accepted:
             return
-        if not getattr(self, '_auto_update_running', False):
+        if not self._auto_update_running:
             self._auto_update_running = True
             self._auto_update_stop = threading.Event()
             self.auto_update_thread = threading.Thread(
@@ -2930,16 +2954,25 @@ class App:
         d[LEGAL_ACCEPTANCE_KEY] = legal_fingerprint()
         write_settings(d)
 
-    def show_language_popup(self, on_done):
-        """First-run screen: choose the language. Styled like the Terms screen."""
-        W, H = 560, 470
-        pw, ph = self.sx(W), self.sx(H)
+    def make_popup(self, w, h, *, track_attr=None, bind_raise=False, topmost=False):
+        """Shared setup for a borderless popup window: creates the Toplevel, centers it over
+        the main window (or the screen, if the main window isn't viewable yet), and returns
+        (win, pw, ph) for the caller to draw into. Used by the language picker, Terms screen
+        and exit confirm, which all look and behave the same way up to this point."""
+        pw, ph = self.sx(w), self.sx(h)
         win = tk.Toplevel(self.root)
         win.overrideredirect(True)
         win.configure(bg=self.BG)
-        self._legal_win = win                       # same keep-in-front handling as the Terms screen
-        self.root.bind("<FocusIn>", self.raise_legal_popup, add="+")
-        self.root.bind("<Map>", self.raise_legal_popup, add="+")
+        if topmost:
+            try:
+                win.attributes("-topmost", True)
+            except tk.TclError:
+                pass
+        if track_attr:
+            setattr(self, track_attr, win)               # lets raise_legal_popup / re-open checks find it
+        if bind_raise:
+            self.root.bind("<FocusIn>", self.raise_legal_popup, add="+")
+            self.root.bind("<Map>", self.raise_legal_popup, add="+")
         if self.root.winfo_viewable():
             win.transient(self.root)
             x = self.root.winfo_x() + (self.root.winfo_width() - pw) // 2
@@ -2948,6 +2981,25 @@ class App:
             x = (win.winfo_screenwidth() - pw) // 2
             y = (win.winfo_screenheight() - ph) // 2
         win.geometry(f"{pw}x{ph}+{max(0, x)}+{max(0, y)}")
+        return win, pw, ph
+
+    def bind_popup_drag(self, win, cv, zone=84):
+        """Lets the user drag a borderless popup by its top strip (the first `zone` px)."""
+        def press(e):
+            win._drag = (e.x_root - win.winfo_x(), e.y_root - win.winfo_y()) if e.y < self.sx(zone) else None
+
+        def drag(e):
+            if win._drag:
+                win.geometry(f"+{e.x_root - win._drag[0]}+{e.y_root - win._drag[1]}")
+
+        win._drag = None
+        cv.bind("<ButtonPress-1>", press)
+        cv.bind("<B1-Motion>", drag)
+
+    def show_language_popup(self, on_done):
+        """First-run screen: choose the language. Styled like the Terms screen."""
+        H = 470
+        win, pw, ph = self.make_popup(560, H, track_attr="_legal_win", bind_raise=True)
 
         scene_photo = self.photo(render_aurora(pw, ph).convert("RGB"))
         cv = ScaledCanvas(win, self.S, width=pw, height=ph, bg=self.BG, bd=0, highlightthickness=0)
@@ -2961,16 +3013,7 @@ class App:
         cv.create_text(72, 56, text="Idioma  \u00b7  Langue  \u00b7  Sprache  \u00b7  \u8a00\u8a9e  \u00b7  \u8bed\u8a00  \u00b7  \uc5b8\uc5b4",
                        fill=self.MUTED, font=self.F(9), anchor="w")
 
-        def press(e):
-            win._drag = (e.x_root - win.winfo_x(), e.y_root - win.winfo_y()) if e.y < self.sx(84) else None
-
-        def drag(e):
-            if win._drag:
-                win.geometry(f"+{e.x_root - win._drag[0]}+{e.y_root - win._drag[1]}")
-
-        win._drag = None
-        cv.bind("<ButtonPress-1>", press)
-        cv.bind("<B1-Motion>", drag)
+        self.bind_popup_drag(win, cv)
 
         def choose(code):
             self.language = code
@@ -2999,24 +3042,9 @@ class App:
         cv.create_text(28, H - 34, text="You can change this later in Settings.", fill=self.MUTED, font=self.F(9), anchor="w")
 
     def show_legal_popup(self):
-        W, H = 640, 592
-        pw, ph = self.sx(W), self.sx(H)
-        win = tk.Toplevel(self.root)
-        win.overrideredirect(True)
-        win.configure(bg=self.BG)
-        win.protocol("WM_DELETE_WINDOW", self.complete_exit)
-        self._legal_win = win
+        win, pw, ph = self.make_popup(640, 592, track_attr="_legal_win", bind_raise=True)
         # Whenever the user comes back to VibePause (Alt+Tab, taskbar, tray) bring the Terms forward.
-        self.root.bind("<FocusIn>", self.raise_legal_popup, add="+")
-        self.root.bind("<Map>", self.raise_legal_popup, add="+")
-        if self.root.winfo_viewable():
-            win.transient(self.root)
-            x = self.root.winfo_x() + (self.root.winfo_width() - pw) // 2
-            y = self.root.winfo_y() + (self.root.winfo_height() - ph) // 2
-        else:
-            x = (win.winfo_screenwidth() - pw) // 2
-            y = (win.winfo_screenheight() - ph) // 2
-        win.geometry(f"{pw}x{ph}+{max(0, x)}+{max(0, y)}")
+        win.protocol("WM_DELETE_WINDOW", self.complete_exit)
 
         CARD = (28, 142, 612, 484)
         scene = render_aurora(pw, ph)
@@ -3034,16 +3062,7 @@ class App:
         cv.create_text(72, 56, text=tr("Read both documents to the end to unlock I Agree."), fill=self.MUTED,
                        font=self.F(9), anchor="w")
 
-        def press(e):
-            win._drag = (e.x_root - win.winfo_x(), e.y_root - win.winfo_y()) if e.y < self.sx(84) else None
-
-        def drag(e):
-            if win._drag:
-                win.geometry(f"+{e.x_root - win._drag[0]}+{e.y_root - win._drag[1]}")
-
-        win._drag = None
-        cv.bind("<ButtonPress-1>", press)
-        cv.bind("<B1-Motion>", drag)
+        self.bind_popup_drag(win, cv)
 
         docs = {
             "terms": ("TERMS_AND_CONDITIONS.md", tr("Terms and Conditions")),
@@ -3418,8 +3437,8 @@ class App:
         # Collapse back-to-back identical lines (ignoring the timestamp) into one line with a
         # counter, so a repeating failure shows as "... (x5)" instead of filling Live activity.
         key = self._LOG_TS.sub("", text)
-        if self.log_lines and key == getattr(self, "_last_log_key", None):
-            self._last_log_count = getattr(self, "_last_log_count", 1) + 1
+        if self.log_lines and key == self._last_log_key:
+            self._last_log_count += 1
             self.log_lines[-1] = f"{text} (x{self._last_log_count})"
         else:
             self._last_log_key, self._last_log_count = key, 1
@@ -3507,7 +3526,7 @@ class App:
             pass
 
     def close_tray_popup(self):
-        popup = getattr(self, "tray_popup", None)
+        popup = self.tray_popup
         self.tray_popup = None
         if popup is not None:
             try:
@@ -3577,7 +3596,7 @@ class App:
         state = {"entered": False, "outside": 0, "age": 0}
 
         def watch():
-            if getattr(self, "tray_popup", None) is not win:
+            if self.tray_popup is not win:
                 return
             try:
                 mx, my = win.winfo_pointerxy()
@@ -3647,7 +3666,7 @@ class App:
     def raise_legal_popup(self, *_):
         """Keep the Terms dialog in front. It is a borderless window, so Windows does not
         bring it forward with the main window (no taskbar button / Alt+Tab entry of its own)."""
-        win = getattr(self, "_legal_win", None)
+        win = self._legal_win
         if win is None:
             return
         try:
@@ -3675,7 +3694,7 @@ class App:
     def confirm_exit(self):
         """Ask "are you sure?" before quitting. Hiding to the tray never asks, and neither does a
         second copy or the installer asking this one to quit (that uses complete_exit directly)."""
-        existing = getattr(self, "_quit_win", None)
+        existing = self._quit_win
         if existing is not None:
             try:
                 if existing.winfo_exists():
@@ -3686,20 +3705,7 @@ class App:
             except tk.TclError:
                 pass
         W, H = 440, 230
-        pw, ph = self.sx(W), self.sx(H)
-        win = tk.Toplevel(self.root)
-        self._quit_win = win
-        win.overrideredirect(True)
-        win.configure(bg=self.BG)
-        win.attributes("-topmost", True)
-        if self.root.winfo_viewable():
-            win.transient(self.root)
-            x = self.root.winfo_x() + (self.root.winfo_width() - pw) // 2
-            y = self.root.winfo_y() + (self.root.winfo_height() - ph) // 2
-        else:
-            x = (win.winfo_screenwidth() - pw) // 2
-            y = (win.winfo_screenheight() - ph) // 2
-        win.geometry(f"{pw}x{ph}+{max(0, x)}+{max(0, y)}")
+        win, pw, ph = self.make_popup(W, H, track_attr="_quit_win", topmost=True)
 
         scene = render_aurora(pw, ph)
         scene.alpha_composite(self.gi(W - 24, H - 24, 22, fill=(16, 16, 40, 235), border=(255, 255, 255, 50), sheen=10),
@@ -3758,7 +3764,7 @@ class App:
                 self.tray_icon.stop()
             except Exception:
                 pass
-            thread = getattr(self, "tray_thread", None)
+            thread = self.tray_thread
             if thread is not None:
                 thread.join(1.0)
             self.tray_icon = None

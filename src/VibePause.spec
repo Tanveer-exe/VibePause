@@ -12,7 +12,7 @@ binaries, hiddenimports = [], ["pystray._win32"]
 for pkg in ("pystray", "PIL", "winrt.runtime", "winrt.windows.media.control",
             "winrt.windows.foundation", "winrt.windows.foundation.collections",
             "winrt.windows.media.ocr", "winrt.windows.graphics.imaging",
-            "winrt.windows.storage.streams", "pycaw", "comtypes", "psutil"):
+            "winrt.windows.storage.streams", "pycaw", "comtypes"):
     try:
         d, b, h = collect_all(pkg)
         datas += d; binaries += b; hiddenimports += h
