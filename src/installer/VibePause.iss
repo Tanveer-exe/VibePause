@@ -5,12 +5,12 @@
 [Setup]
 AppId={{D5B8B6B7-7B61-4D1D-9D73-3A1B9A0D1E42}
 AppName={#MyAppName}
-AppVersion=1.0.0
+AppVersion=1.0.1
 ; Keep these three in step with AppVersion. SignPath requires the product name and version to be set
 ; the same way in every signed file.
-VersionInfoVersion=1.0.0.0
+VersionInfoVersion=1.0.1.0
 VersionInfoProductName=VibePause
-VersionInfoProductVersion=1.0.0.0
+VersionInfoProductVersion=1.0.1.0
 VersionInfoDescription=VibePause Setup
 AppPublisher={#MyAppPublisher}
 DefaultDirName={localappdata}\Programs\VibePause
