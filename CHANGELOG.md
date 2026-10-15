@@ -1,4 +1,10 @@
 # Changelog
+## 1.0.2
+
+- Add a now-playing music card with track artwork, playback controls, and an optional spinning vinyl cover.
+- Replace mixed live activity logs with a focused VALORANT game-status card.
+- Remove the call-app caption while retaining call-app skipping.
+
 ## 1.0.1
 
 - Add a Google Drive fallback for update checks, used while the GitHub repository is private. Updates are still verified with a SHA-256 checksum.
