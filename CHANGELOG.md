@@ -7,6 +7,8 @@
 - Replace the "Live activity" log with a "Game status" card. It shows only the current VALORANT state and the last three game events. Update checks, monitor errors and other system messages no longer appear there; they stay in error.log and in "Copy diagnostics".
 - Remove the "Call apps are skipped" caption from the Supported media card. Call apps are still skipped.
 - Show a clearer message, and write the details to error.log, when an update download returns a web page instead of the installer or a different size than expected.
+- error.log now also records crashes outside the window (including background threads) and every failed update check or download, with the Windows and Python version on each entry.
+- Remove the Google Drive update fallback. Updates come from GitHub releases only.
 
 ## 1.0.1
 
