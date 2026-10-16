@@ -16,7 +16,7 @@ except Exception:
 
 APP_NAME = "VibePause"
 APP_ID = "tanveer-exe.VibePause"
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 UPDATE_REPO = "Tanveer-exe/VibePause"
 UPDATE_ASSET = "VibePause_Setup.exe"
 # Bundled resources: PyInstaller extracts/places them under sys._MEIPASS.
@@ -86,6 +86,32 @@ DEFAULT_ACTIONS = {
     "Agent Selection": "Play",
     "Ultimate Used": "Play",
 }
+
+# ---------------------------------------------------------------------------
+# Game status. One state value (App.game_state) drives both the status pill on the music card and
+# the Game status card, so they can never disagree. Every state below comes from something the
+# Controller really detects: the VALORANT process, or one of the EVENTS above.
+# key -> (sentence on the Game status card, short text on the music card's pill)
+# ---------------------------------------------------------------------------
+GAME_STATES = {
+    "waiting": ("Waiting for VALORANT", "Waiting for VALORANT"),
+    "off": ("VibePause is off", "VibePause is off"),
+    "open": ("VALORANT is open", "VALORANT is open"),
+    "menu": ("In the menu", "In the menu"),
+    "agent_select": ("Agent select", "In match"),
+    "match_started": ("Match started", "In match"),
+    "buy": ("Buy phase", "In match"),
+    "round": ("Round started", "In match"),
+    "dead": ("You died", "In match"),
+    "revived": ("You were revived", "In match"),
+    "match_ended": ("Match ended", "Match ended"),
+}
+EVENT_STATES = {
+    "Agent Selection": "agent_select", "Match Started": "match_started", "Buy Phase Started": "buy",
+    "Combat Start": "round", "Player Eliminated": "dead", "Ultimate Used": "revived",
+    "Match Ended": "match_ended", "Returned to Lobby": "menu",
+}
+GAME_HISTORY_TEXT = {"open": "VALORANT opened", "waiting": "VALORANT closed"}   # process start / exit
 
 # ---------------------------------------------------------------------------
 # Volume mode and translations
@@ -626,6 +652,13 @@ try:
 except Exception:
     WINDOWS_OCR_AVAILABLE = False
 
+# Album art for the now-playing card. Separate from the OCR import so either can be missing.
+try:
+    from winrt.windows.storage.streams import DataReader as _DataReader
+    THUMBNAIL_AVAILABLE = True
+except Exception:
+    THUMBNAIL_AVAILABLE = False
+
 def _session_id(session):
     try:
         return session.source_app_user_model_id
@@ -710,6 +743,167 @@ class MediaLoop:
 
 
 MEDIA = MediaLoop()
+
+# ---------------------------------------------------------------------------
+# Now playing: title, artist, artwork and transport controls of the active media session.
+# Everything below runs on the media loop thread (or the watcher thread that calls it); the UI only
+# ever receives plain data through App.event(). Call apps are skipped by is_call_app(), exactly as
+# for auto-pause, so the card never shows or controls them.
+# ---------------------------------------------------------------------------
+NP_POLL = 2.5                   # seconds between polls; media events wake the watcher sooner
+NP_WAKE = threading.Event()     # set by media events (any thread) and by the UI after a button press
+_np_subs = {}                   # session id -> (session, [(remove_function, token), ...])
+_np_mgr = None
+_np_resub = [False]
+
+
+def _np_wake(*_):
+    NP_WAKE.set()
+
+
+def _np_sessions_changed(*_):
+    _np_resub[0] = True
+    NP_WAKE.set()
+
+
+def _np_unsubscribe_all():
+    for _session, tokens in list(_np_subs.values()):
+        for remove, token in tokens:
+            try:
+                remove(token)
+            except Exception:
+                pass
+    _np_subs.clear()
+
+
+def _np_subscribe(mgr, sessions):
+    """Wake the watcher when a session's track or playback state changes. Polling stays on as a
+    fallback, so a missed event only delays the card by a couple of seconds."""
+    global _np_mgr
+    if _np_mgr is not mgr:
+        _np_subs.clear()            # tokens of a previous manager are dead
+        try:
+            mgr.add_sessions_changed(_np_sessions_changed)
+            mgr.add_current_session_changed(_np_wake)
+        except Exception as e:
+            write_error_log(f"Now playing: manager events unavailable: {type(e).__name__}: {e}")
+        _np_mgr = mgr
+    if _np_resub[0]:
+        _np_resub[0] = False
+        _np_unsubscribe_all()
+    live = set()
+    for session in sessions:
+        sid = _session_id(session)
+        live.add(sid)
+        if sid in _np_subs:
+            continue
+        tokens = []
+        for name in ("media_properties_changed", "playback_info_changed"):
+            try:
+                tokens.append((getattr(session, "remove_" + name), getattr(session, "add_" + name)(_np_wake)))
+            except Exception as e:
+                write_error_log(f"Now playing: could not subscribe to {name}: {type(e).__name__}: {e}")
+        _np_subs[sid] = (session, tokens)
+    for sid in [k for k in _np_subs if k not in live]:
+        for remove, token in _np_subs.pop(sid)[1]:
+            try:
+                remove(token)
+            except Exception:
+                pass
+
+
+def _np_pick(mgr):
+    """The session the card shows and controls: a playing one, else the system's current one."""
+    sessions = [s for s in mgr.get_sessions() if not is_call_app(_session_id(s))]
+    if not sessions:
+        return None, sessions
+    for session in sessions:
+        try:
+            if session.get_playback_info().playback_status == _PlaybackStatus.PLAYING:
+                return session, sessions
+        except Exception:
+            pass
+    try:
+        current = mgr.get_current_session()
+    except Exception:
+        current = None
+    if current is not None and not is_call_app(_session_id(current)):
+        return current, sessions
+    return sessions[0], sessions
+
+
+async def _np_read_thumbnail(props):
+    ref = props.thumbnail
+    if ref is None:
+        return None
+    stream = await ref.open_read_async()
+    try:
+        size = int(stream.size)
+        if size <= 0 or size > 8 * 1024 * 1024:
+            return None
+        reader = _DataReader(stream)
+        await reader.load_async(size)
+        buf = bytearray(size)
+        reader.read_bytes(buf)
+        return Image.open(BytesIO(bytes(buf))).convert("RGBA")
+    finally:
+        try:
+            stream.close()
+        except Exception:
+            pass
+
+
+async def _np_snapshot(want_thumb):
+    """Plain-data picture of what is playing. want_thumb(key) says whether to (re)read the artwork."""
+    mgr = await _get_manager()
+    session, sessions = _np_pick(mgr)
+    _np_subscribe(mgr, sessions)
+    if session is None:
+        return {"status": "none"}
+    info = session.get_playback_info()
+    status = info.playback_status
+    status = "playing" if status == _PlaybackStatus.PLAYING else "paused" if status == _PlaybackStatus.PAUSED else "stopped"
+    can_prev = can_toggle = can_next = False
+    try:
+        c = info.controls
+        can_prev, can_next = bool(c.is_previous_enabled), bool(c.is_next_enabled)
+        can_toggle = bool(c.is_play_pause_toggle_enabled or c.is_play_enabled or c.is_pause_enabled)
+    except Exception as e:
+        write_error_log(f"Now playing: controls unavailable: {type(e).__name__}: {e}")
+    title = artist = album = ""
+    props = None
+    try:
+        props = await session.try_get_media_properties_async()
+        title = (props.title or "").strip()
+        artist = (props.artist or props.album_artist or "").strip()
+        album = (props.album_title or "").strip()
+    except Exception as e:
+        write_error_log(f"Now playing: media properties unavailable: {type(e).__name__}: {e}")
+    key = "\x1f".join((_session_id(session), title, artist, album))
+    snap = {"status": status, "key": key, "title": title, "artist": artist,
+            "can_prev": can_prev, "can_toggle": can_toggle, "can_next": can_next}
+    if props is not None and THUMBNAIL_AVAILABLE and want_thumb(key):
+        snap["thumb_tried"] = True
+        try:
+            snap["thumb"] = await _np_read_thumbnail(props)
+        except Exception as e:
+            write_error_log(f"Now playing: artwork unavailable: {type(e).__name__}: {e}")
+    return snap
+
+
+async def _np_control(action):
+    mgr = await _get_manager()
+    session, _sessions = _np_pick(mgr)
+    if session is None:
+        return None
+    call = {"prev": session.try_skip_previous_async, "toggle": session.try_toggle_play_pause_async,
+            "next": session.try_skip_next_async}[action]
+    return bool(await call())
+
+
+def np_control(action):
+    """Blocking. Runs the command on the media loop thread, so call it from a worker thread only."""
+    return MEDIA.run(_np_control(action))
 
 # ---------------------------------------------------------------------------
 # Per-app volume (volume mode). Uses the same per-app volume Windows shows in its volume mixer.
@@ -1423,6 +1617,114 @@ def mix_color(a, b, f):
     return "#%02x%02x%02x" % tuple(int(a[i] + (b[i] - a[i]) * f) for i in range(3))
 
 
+# ---------------------------------------------------------------------------
+# Now-playing cover: a spinning disc. The cover is rotated ONCE per track into DISC_FRAMES frames
+# (never per tick); the animation only swaps which frame the canvas shows. Only the square cover
+# is rotated; the circular mask and the vinyl overlay are the same at every angle, so they are
+# applied/drawn without rotating (no fringe at the edge, and the overlay is one static image).
+# ---------------------------------------------------------------------------
+DISC_STEP = 4                   # degrees between pre-rendered frames
+DISC_FRAMES = 360 // DISC_STEP  # 90
+SPIN_PERIOD = 8.0               # seconds per revolution
+
+
+def disc_mask(d, scale=4):
+    big = d * scale
+    m = Image.new("L", (big, big), 0)
+    ImageDraw.Draw(m).ellipse((0, 0, big - 1, big - 1), fill=255)
+    return m.resize((d, d), Image.Resampling.LANCZOS)
+
+
+def square_cover(img, d):
+    """Centre-crop any artwork to a square and size it d x d (opaque RGB)."""
+    img = img.convert("RGB")
+    w, h = img.size
+    side = min(w, h)
+    left, top = (w - side) // 2, (h - side) // 2
+    return img.crop((left, top, left + side, top + side)).resize((d, d), Image.Resampling.LANCZOS)
+
+
+def placeholder_cover(d):
+    """Artwork stand-in: a muted conic gradient in the ring colours, so the spin is visible."""
+    big = max(d, 64)
+    img = Image.new("RGB", (big, big), (24, 24, 52))
+    draw = ImageDraw.Draw(img)
+    steps = 72
+    for i in range(steps):
+        r, g, b = ring_color(i / steps)
+        col = (int(24 + (r - 24) * 0.55), int(24 + (g - 24) * 0.55), int(52 + (b - 52) * 0.55))
+        draw.pieslice((-big // 4, -big // 4, big + big // 4, big + big // 4),
+                      -90 + i * 360 / steps, -90 + (i + 1) * 360 / steps + 1, fill=col)
+    return img.resize((d, d), Image.Resampling.LANCZOS)
+
+
+def disc_frame(sq, mask, angle):
+    """One frame: the square cover turned clockwise by angle, cut to a circle."""
+    frame = sq if angle % 360 == 0 else sq.rotate(-angle, resample=Image.Resampling.BICUBIC)
+    frame = frame.convert("RGBA")
+    frame.putalpha(mask)
+    return frame
+
+
+def disc_overlay(d):
+    """Static vinyl look drawn over the cover: faint grooves, a rim and a small centre hole."""
+    s = 4
+    big = d * s
+    img = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    c = big / 2
+    for n, frac in enumerate((0.95, 0.88, 0.81, 0.74, 0.67, 0.60, 0.53, 0.46, 0.39, 0.32)):
+        r = c * frac
+        color = (0, 0, 0, 52) if n % 2 == 0 else (255, 255, 255, 14)
+        draw.ellipse((c - r, c - r, c + r, c + r), outline=color, width=s)
+    r = c - 1
+    draw.ellipse((c - r, c - r, c + r, c + r), outline=(255, 255, 255, 46), width=s)
+    r = c * 0.115                               # soft shadow around the hole
+    draw.ellipse((c - r, c - r, c + r, c + r), fill=(0, 0, 0, 80))
+    r = c * 0.075                               # the hole itself matches the ring's dark inside
+    draw.ellipse((c - r, c - r, c + r, c + r), fill=(10, 10, 34, 255), outline=(255, 255, 255, 70), width=s)
+    return img.resize((d, d), Image.Resampling.LANCZOS)
+
+
+def control_button_image(kind, d, state):
+    """Round transport button. kind: prev / play / pause / next. state: normal / hot / dim."""
+    s = 4
+    big = d * s
+    if kind in ("play", "pause"):
+        grad = Image.linear_gradient("L").resize((big, big)).rotate(45, resample=Image.Resampling.BICUBIC)
+        base = Image.composite(Image.new("RGB", (big, big), (90, 140, 255)),
+                               Image.new("RGB", (big, big), (47, 227, 198)), grad).convert("RGBA")
+        if state == "hot":
+            base = Image.blend(base, Image.new("RGBA", (big, big), (255, 255, 255, 255)), 0.16)
+        edge = Image.new("L", (big, big), 0)
+        ImageDraw.Draw(edge).ellipse((0, 0, big - 1, big - 1), fill=255 if state != "dim" else 70)
+        base.putalpha(edge)
+        glyph_color = (12, 12, 36, 255 if state != "dim" else 150)
+    else:
+        a, b = ((255, 255, 255, 44), (255, 255, 255, 70)) if state == "hot" else ((255, 255, 255, 18), (255, 255, 255, 44))
+        base = glass_image(big, big, big // 2, fill=a, border=b, sheen=0)
+        glyph_color = (241, 239, 255, 255 if state != "dim" else 90)
+        if state == "dim":
+            base.putalpha(base.getchannel("A").point(lambda v: v * 6 // 10))
+    layer = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+    g = ImageDraw.Draw(layer)
+    cx = cy = big / 2
+    h = big * (0.17 if kind in ("play", "pause") else 0.14)
+    if kind == "play":
+        g.polygon([(cx - 0.7 * h, cy - h), (cx - 0.7 * h, cy + h), (cx + 1.0 * h, cy)], fill=glyph_color)
+    elif kind == "pause":
+        for x0, x1 in ((-0.8, -0.2), (0.2, 0.8)):
+            g.rounded_rectangle((cx + x0 * h, cy - h, cx + x1 * h, cy + h), radius=0.12 * h, fill=glyph_color)
+    elif kind == "prev":
+        g.rounded_rectangle((cx - h, cy - h, cx - 0.6 * h, cy + h), radius=0.08 * h, fill=glyph_color)
+        g.polygon([(cx + h, cy - h), (cx + h, cy + h), (cx - 0.5 * h, cy)], fill=glyph_color)
+    else:
+        g.rounded_rectangle((cx + 0.6 * h, cy - h, cx + h, cy + h), radius=0.08 * h, fill=glyph_color)
+        g.polygon([(cx - h, cy - h), (cx - h, cy + h), (cx + 0.5 * h, cy)], fill=glyph_color)
+    base.alpha_composite(layer)
+    return base.resize((d, d), Image.Resampling.LANCZOS)
+
+
 class ScaledCanvas(tk.Canvas):
     def __init__(self, master, scale, **kw):
         super().__init__(master, **kw)
@@ -1456,33 +1758,6 @@ class ScaledCanvas(tk.Canvas):
         if c:
             return super().coords(item, *[round(v * self.k) for v in c])
         return super().coords(item)
-
-
-async def _gsmtc_status():
-    mgr = await _get_manager()
-    sessions = [s for s in mgr.get_sessions() if not is_call_app(_session_id(s))]
-    if not sessions:
-        return "none"
-    paused = False
-    for session in sessions:
-        try:
-            status = session.get_playback_info().playback_status
-        except Exception:
-            continue
-        if status == _PlaybackStatus.PLAYING:
-            return "playing"
-        if status == _PlaybackStatus.PAUSED:
-            paused = True
-    return "paused" if paused else "none"
-
-
-def media_status():
-    if not GSMTC_AVAILABLE:
-        return None
-    try:
-        return MEDIA.run(_gsmtc_status())
-    except Exception:
-        return None
 
 
 def round_window(hwnd, width, height, radius):
@@ -1678,9 +1953,7 @@ class App:
         self.cv = None
         self.imgs = []
         self.chip_imgs = {}
-        self.log_lines = []
-        self.log_items = []
-        self.bar_items = []
+        self.log_lines = []            # everything, for Copy diagnostics; the window shows only game events
         self.bars_active = False
         self._drag_ok = False
         self.delay = 0
@@ -1694,8 +1967,40 @@ class App:
         self.language = "en"
         self.language_chosen = False                # becomes True once the person has picked a language
         self.vol_widgets = {}
-        self._media_state = None
-        self._hero_event = None
+        self.spin_cover = True                      # "Spinning cover" setting
+        # Game status (see GAME_STATES): one state for the music card's pill and the Game status card.
+        self.game_state = "waiting"
+        self.game_action = None                     # action applied by the last game event, for the sentence
+        self.game_events = []                       # (time, state key, action), newest last
+        self._valorant_seen = None
+        self._paused_by_app = False                 # VibePause paused the music for the match
+        self._paused_at = 0.0
+        self._game_tick_running = False
+        # Now playing card
+        self.np_key = None
+        self.np_title_text = ""
+        self.np_artist_text = ""
+        self.np_status = "none"                     # playing / paused / stopped / none / unavailable
+        self.np_caps = (False, False, False)        # previous, play/pause, next supported by the player
+        self.np_btn = {}
+        self.np_busy = False
+        self.np_flash_until = 0.0
+        self.pill_items = {}
+        self.pill_bars = []
+        self._np_photos = {}
+        self._eq_flat = False
+        self._np_thumb = None                       # artwork of the current track (PIL), kept to re-render
+        self._cover_gen = 0                         # bumped on every track change; stale work checks it
+        self._cover_job = None
+        self._disc_pending = []                     # rendered frames waiting to become PhotoImages
+        self._disc_tk = []                          # per-track PhotoImage frames (freed on track change)
+        self._disc_static = None
+        self._disc_ready = False
+        self._disc_angle = 0.0
+        self._disc_idx = 0
+        self._disc_last_t = None
+        self._disc_d = 0
+        self.disc_item = None
         self.settings_open = False
         self.tray_icon = None
         self.tray_popup = None
@@ -1779,6 +2084,7 @@ class App:
                 self.active = clean_bool(d.get("active"), True)
                 self.startup = clean_bool(d.get("startup"), False)
                 self.close_to_tray = clean_bool(d.get("close_to_tray"), True)
+                self.spin_cover = clean_bool(d.get("spin_cover"), True)
                 saved_hotkey = d.get("hotkey", "")
                 self.hotkey = saved_hotkey if parse_hotkey(saved_hotkey) else ""
                 lang = d.get("language")
@@ -1806,6 +2112,7 @@ class App:
             "active": self.active,
             "startup": self.startup,
             "close_to_tray": self.close_to_tray,
+            "spin_cover": self.spin_cover,
             "auto_update_enabled": self.auto_update_enabled,
             "hotkey": self.hotkey,
             "language": self.language,
@@ -2012,11 +2319,12 @@ class App:
     EVENTS_CARD = (350, 82, 1012, 432)
     MEDIA_CARD = (350, 448, 672, 616)
     ACTIVITY_CARD = (690, 448, 1012, 616)
-    RING_CENTER = (178, 214)
-    RING_SIZE = 190
+    RING_CENTER = (178, 270)
+    RING_SIZE = 232
+    DISC_SIZE = 216
     TILE_SIZE = (303, 68)
     CHIP_SIZE = (137, 36)
-    LOG_ROWS = 5
+    GAME_ROWS = 3
     HEADER_H = 72
 
     def sx(self, value):
@@ -2057,21 +2365,6 @@ class App:
             size -= 1
         return size
 
-    def hero_font_size(self, text):
-        """Font size for the event name inside the ring: its longest word must fit the width and the
-        whole name must wrap to at most two lines."""
-        size = 17
-        while size > 10:
-            font = self.font_for(size)
-            longest = max((font.measure(word) for word in text.split()), default=0)
-            if longest <= 146 * self.S and font.measure(text) <= 2 * 138 * self.S:
-                break
-            size -= 1
-        return size
-
-    def set_hero_text(self, text):
-        self.hero.itemconfig(self.hero_event_item, text=text, font=self.F(self.hero_font_size(text)))
-
     def tile_origin(self, i):
         return 372 + (i % 2) * 315, 130 + (i // 2) * 74
 
@@ -2108,12 +2401,11 @@ class App:
         W, H = self.WIN_W, self.WIN_H
         self.cv = ScaledCanvas(self.root, self.S, width=self.sx(W), height=self.sx(H), bg=self.BG, bd=0, highlightthickness=0)
         self.cv.pack(fill="both", expand=True)
-        self.hero = self.cv
         self.compose_scene(W, H)
         self.cv.create_image(0, 0, image=self.scene_photo, anchor="nw")
         self.build_chip_images()
         self.build_header()
-        self.build_hero_card()
+        self.build_now_playing_card()
         self.build_events()
         self.build_media_card()
         self.build_activity_card()
@@ -2124,6 +2416,9 @@ class App:
         if not self._bars_running:
             self._bars_running = True
             self.animate_bars()
+        if not self._game_tick_running:
+            self._game_tick_running = True
+            self.root.after(20000, self.tick_game_times)
 
     def compose_scene(self, W, H):
         scene = render_aurora(self.sx(W), self.sx(H))
@@ -2148,7 +2443,7 @@ class App:
                                   (self.sx(x), self.sx(y)))
         d = self.sx(self.RING_SIZE)
         cx, cy = self.sx(self.RING_CENTER[0]), self.sx(self.RING_CENTER[1])
-        ring = render_ring(d, max(2, self.sx(5)))
+        ring = render_ring(d, max(2, self.sx(4)))
         pad = self.sx(46)
         glow = Image.new("RGBA", (d + 2 * pad, d + 2 * pad), (0, 0, 0, 0))
         glow.alpha_composite(ring, (pad, pad))
@@ -2290,38 +2585,73 @@ class App:
         limit = self._status_limit
         return self.fit(text, limit * self.S, self.font_for(10, True)) if limit else text
 
-    def build_hero_card(self):
+    def build_now_playing_card(self):
+        """Music area: status pill, rotating disc cover, title/artist and previous / play-pause / next."""
         cv = self.cv
         cx, cy = self.RING_CENTER
-        cv.create_text(cx, cy - 32, text=" ".join(tr("NOW")), fill=self.GREEN, font=self.F(9, True))
-        hero_text = tr(self._hero_event or "Waiting for VALORANT")
-        self.hero_event_item = cv.create_text(cx, cy + 8, text=hero_text, fill=self.TEXT,
-                                         font=self.F(self.hero_font_size(hero_text)), width=150, justify="center")
-        self.bar_items = []
-        base_y = 376
-        for i in range(10):
-            color = mix_color((47, 227, 198), (150, 96, 255), i / 9) if i < 5 else mix_color((150, 96, 255), (255, 93, 143), (i - 5) / 4)
-            x = cx - 58.5 + i * 13
-            self.bar_items.append(cv.create_line(x, base_y - 5, x, base_y + 5, width=6, capstyle="round", fill=color))
-        self.bar_x = [cx - 58.5 + i * 13 for i in range(10)]
-        self.bar_y = base_y
-        self.hero_music = cv.create_text(cx, 424, text=tr("Checking media..."), fill=self.MUTED, font=self.F(10))
+        self.build_np_pill(46, 108)
+        self._disc_d = self.sx(self.DISC_SIZE)
+        self.disc_item = cv.create_image(cx, cy, image=self.current_disc_image())
+        cv.create_image(cx, cy, image=self.disc_overlay_photo())
+        self._np_font_title = self.font_for(15, True)
+        self._np_font_artist = self.font_for(10)
+        self.np_title = cv.create_text(cx, 424, text="", fill=self.TEXT, font=self.F(15, True))
+        self.np_artist = cv.create_text(cx, 448, text="", fill=self.MUTED, font=self.F(10))
+        self.np_btn = {}
+        for tag, kinds, x, d in (("np_prev", ("prev",), 94, 46), ("np_toggle", ("play", "pause"), 178, 64),
+                                 ("np_next", ("next",), 262, 46)):
+            imgs = {(k, st): self.photo(control_button_image(k, self.sx(d), st))
+                    for k in kinds for st in ("normal", "hot", "dim")}
+            item = cv.create_image(x, 524, image=imgs[(kinds[0], "dim")], tags=(tag, "nodrag"))
+            self.np_btn[tag] = {"item": item, "imgs": imgs, "hover": False}
+            self.make_clickable(tag, lambda t=tag: self.np_press(t), lambda on, t=tag: self.np_hover(t, on))
+        self.refresh_np()
+        self.refresh_game_ui()
 
-        for tag, label, icon, fill, border, color, x0, command in (
-            ("b_play", "Play", "play", (47, 227, 198, 52), (80, 240, 215, 115), self.GREEN, 52, self.force_play),
-            ("b_pause", "Pause", "pause", (255, 93, 143, 56), (255, 125, 170, 120), self.RED, 182, self.force_pause),
-        ):
-            w, h, y0 = 122, 48, 546
-            normal = self.photo(self.gi(w, h, 18, fill=fill, border=border))
-            hot = self.photo(self.gi(w, h, 18, fill=fill[:3] + (fill[3] + 36,), border=border))
-            bg = cv.create_image(x0, y0, image=normal, anchor="nw", tags=(tag, "nodrag"))
-            glyph = self.img(icon)
-            if glyph:
-                cv.create_image(x0 + 34, y0 + h // 2, image=glyph, tags=(tag, "nodrag"))
-            label_text = tr(label)
-            cv.create_text(x0 + 52, y0 + h // 2, text=label_text, fill=color,
-                           font=self.F(self.fit_size(label_text, w - 52 - 10, 11, True), True), anchor="w", tags=(tag, "nodrag"))
-            self.make_clickable(tag, command, lambda on, b=bg, n=normal, ho=hot: cv.itemconfig(b, image=ho if on else n))
+    def build_np_pill(self, x0, cy):
+        """Small status pill: a mini equalizer and a short text. Teal = playing, pink = paused by VibePause."""
+        cv = self.cv
+        f = self.font_for(9, True)
+        texts = [tr(t) for t in ("Waiting for VALORANT", "In match", "In the menu", "Paused for your match",
+                                 "VibePause is off", "VALORANT is open", "Match ended")]
+        w = int(min(252, max(120, max(f.measure(t) for t in texts) / self.S + 52)))
+        h = 30
+        self._pill_text_w = self.sx(w - 46)
+        self._pill_font = f
+        tints = {"idle": ((255, 255, 255, 14), (255, 255, 255, 38)),
+                 "play": ((47, 227, 198, 34), (80, 240, 215, 105)),
+                 "pause": ((255, 93, 143, 40), (255, 125, 170, 105))}
+        self.pill_items = {"bg": cv.create_image(x0, cy, image=self.photo(self.gi(w, h, h // 2, fill=tints["idle"][0], border=tints["idle"][1])), anchor="w")}
+        self.pill_bgs = {k: self.photo(self.gi(w, h, h // 2, fill=v[0], border=v[1])) for k, v in tints.items()}
+        cv.itemconfig(self.pill_items["bg"], image=self.pill_bgs["idle"])
+        self.pill_bar_x = [x0 + 15 + i * 5 for i in range(4)]
+        self.pill_cy = cy
+        self.pill_bars = [cv.create_line(x, cy - 2, x, cy + 2, width=3, capstyle="round", fill=self.MUTED)
+                          for x in self.pill_bar_x]
+        self._eq_flat = True
+        self.pill_items["text"] = cv.create_text(x0 + 38, cy, text="", anchor="w", font=self.F(9, True), fill=self.MUTED)
+
+    def disc_overlay_photo(self):
+        if "overlay" not in self._np_photos:
+            self._np_photos["overlay"] = self.photo(disc_overlay(self.sx(self.DISC_SIZE)))
+        return self._np_photos["overlay"]
+
+    def placeholder_photo(self):
+        if "placeholder" not in self._np_photos:
+            d = self.sx(self.DISC_SIZE)
+            self._np_photos["placeholder"] = self.photo(disc_frame(placeholder_cover(d), disc_mask(d), 0))
+        return self._np_photos["placeholder"]
+
+    def current_disc_image(self):
+        if self._disc_ready and self.spin_cover and self._disc_tk:
+            return self._disc_tk[self._disc_idx % len(self._disc_tk)]
+        return self._disc_static or self.placeholder_photo()
+
+    def set_disc_image(self, photo):
+        try:
+            self.cv.itemconfig(self.disc_item, image=photo)
+        except tk.TclError:
+            pass
 
     def build_events(self):
         cv = self.cv
@@ -2384,9 +2714,8 @@ class App:
         self.action_vars, self.action_button, self.vol_widgets = {}, {}, {}
         self.build()
         self.status_update()
-        if self._media_state is not None:
-            self.set_media_state(self._media_state)
-        self.refresh_log()
+        self.refresh_np()
+        self.refresh_game_ui()
         self._tray_state = None
         self.update_tray()
 
@@ -2525,54 +2854,326 @@ class App:
             if icon:
                 cv.create_image(x + 10, y + 18, image=icon, anchor="w")
             cv.create_text(x + 36, y + 18, text=label, fill=self.TEXT, font=self.F(9), anchor="w")
-        cv.create_text(374, 592, text=tr("Any Windows media app. Call apps are skipped."), fill=self.MUTED,
-                       font=self.F(8), anchor="w", width=290)
 
     def build_activity_card(self):
+        """Game status: the current VALORANT state in large text and the last few game events."""
         cv = self.cv
-        cv.create_text(712, 474, text=tr("Live activity"), fill=self.TEXT, font=self.F(13, True), anchor="w")
-        clear = cv.create_text(990, 474, text=tr("Clear"), fill=self.MUTED, font=self.F(9, True), anchor="e", tags=("clear", "nodrag"))
-        self.make_clickable("clear", self.clear_log, lambda on: cv.itemconfig(clear, fill=self.TEXT if on else self.MUTED))
-        self.log_font = self.font_for(9)
-        self.log_items = [cv.create_text(712, 504 + i * 21, text="", anchor="w", font=self.F(9), fill=self.MUTED)
-                          for i in range(self.LOG_ROWS)]
+        cv.create_text(712, 474, text=tr("Game status"), fill=self.TEXT, font=self.F(13, True), anchor="w")
+        self.game_state_item = cv.create_text(712, 506, text="", anchor="w", font=self.F(15, True), fill=self.TEXT)
+        cv.create_line(712, 529, 990, 529, fill=self.PANEL3)
+        self.game_row_font = self.font_for(9)
+        self.game_rows = [(cv.create_text(712, 551 + i * 22, text="", anchor="w", font=self.F(9), fill=self.MUTED),
+                           cv.create_text(990, 551 + i * 22, text="", anchor="e", font=self.F(9), fill=self.FAINT))
+                          for i in range(self.GAME_ROWS)]
 
-    def refresh_log(self):
-        newest = self.log_lines[::-1][:self.LOG_ROWS]
-        for i, item in enumerate(self.log_items):
-            text = self.fit(newest[i], self.sx(282), self.log_font) if i < len(newest) else ""
-            self.cv.itemconfig(item, text=text, fill=self.TEXT if i == 0 else "#b4b2d6")
+    def game_sentence(self, key, action=None, history=False):
+        """Short human sentence for a state, plus what VibePause did to the music when it acted."""
+        text = tr((GAME_HISTORY_TEXT.get(key) if history else None) or GAME_STATES[key][0])
+        action = str(action or "")
+        if action == "Pause":
+            text += " - " + tr("music paused")
+        elif action == "Play":
+            text += " - " + tr("music resumed")
+        elif action.endswith("%"):
+            text += " - " + tr("volume") + " " + action
+        return text
+
+    def ago_text(self, ts):
+        secs = max(0, int(time.time() - ts))
+        if secs < 60:
+            return tr("just now")
+        if secs < 3600:
+            return tr("{n} min ago").replace("{n}", str(secs // 60))
+        return time.strftime("%H:%M", time.localtime(ts))
+
+    def set_game_state(self, key, action=None, record=False):
+        self.game_state, self.game_action = key, action
+        if record:
+            self.game_events.append((time.time(), key, action))
+            del self.game_events[:-20]
+        self.refresh_game_ui()
+
+    def effective_game_state(self):
+        return "off" if not self.active else self.game_state
+
+    def refresh_game_ui(self):
+        """The one place the pill and the Game status card are drawn from, so they always agree."""
+        if self.cv is None or not self.pill_items:
+            return
+        key = self.effective_game_state()
+        # Pill on the music card
+        paused = (self._paused_by_app and bool(self.np_key) and self.np_status != "playing"
+                  and key not in ("waiting", "off"))
+        if paused:
+            text, color, tint = tr("Paused for your match"), self.RED, "pause"
+        else:
+            text = tr(GAME_STATES[key][1])
+            color, tint = (self.GREEN, "play") if self.np_status == "playing" else (self.MUTED, "idle")
+        self.cv.itemconfig(self.pill_items["text"], text=self.fit(text, self._pill_text_w, self._pill_font), fill=color)
+        self.cv.itemconfig(self.pill_items["bg"], image=self.pill_bgs[tint])
+        for item in self.pill_bars:
+            self.cv.itemconfig(item, fill=color)
+        self.bars_active = self.np_status == "playing"
+        self.refresh_game_card(key)
+
+    def refresh_game_card(self, key=None):
+        key = key or self.effective_game_state()
+        text = self.game_sentence(key, self.game_action if key == self.game_state else None)
+        size = self.fit_size(text, 278, 15, True, 10)
+        color = self.RED if key == "dead" else (self.MUTED if key in ("waiting", "off") else self.TEXT)
+        self.cv.itemconfig(self.game_state_item, text=self.fit(text, self.sx(278), self.font_for(size, True)),
+                           font=self.F(size, True), fill=color)
+        newest = self.game_events[::-1][:self.GAME_ROWS]
+        for i, (left, right) in enumerate(self.game_rows):
+            if i < len(newest):
+                ts, k, action = newest[i]
+                when = self.ago_text(ts)
+                room = self.sx(278) - self.game_row_font.measure(when) - self.sx(12)
+                self.cv.itemconfig(left, text=self.fit(self.game_sentence(k, action, history=True), room, self.game_row_font),
+                                   fill=self.TEXT if i == 0 else "#b4b2d6")
+                self.cv.itemconfig(right, text=when)
+            else:
+                self.cv.itemconfig(left, text=tr("No game events yet") if (i == 0 and not newest) else "", fill=self.MUTED)
+                self.cv.itemconfig(right, text="")
+
+    def tick_game_times(self):
+        """Keep "2 min ago" fresh while the window is on screen."""
+        try:
+            if self.root.winfo_viewable() and self.game_events:
+                self.refresh_game_card()
+            self.root.after(20000, self.tick_game_times)
+        except tk.TclError:
+            self._game_tick_running = False
 
     def animate_bars(self):
+        """The one UI animation timer: the pill's mini equalizer and the spinning disc.
+        About 22 fps while the window is visible; while it is hidden or minimized nothing is drawn and
+        the timer only checks, slowly, whether it is visible again."""
+        delay = 45
         try:
             if self.root.winfo_viewable():
-                t = time.monotonic()
-                for i, item in enumerate(self.bar_items):
-                    if self.bars_active:
-                        half = 5 + 22 * abs(math.sin(t * 2.3 + i * 0.9)) * (0.55 + 0.45 * abs(math.sin(t * 0.9 + i)))
-                    else:
-                        half = 3
-                    self.cv.coords(item, self.bar_x[i], self.bar_y - half, self.bar_x[i], self.bar_y + half)
+                now = time.monotonic()
+                self.tick_equalizer(now)
+                self.tick_disc(now)
+                self.kick_cover()
+            else:
+                self._disc_last_t = None
+                delay = 400
         except tk.TclError:
             self._bars_running = False
             return
-        except Exception:
-            pass
+        except Exception as e:
+            write_error_log(f"Animation: {type(e).__name__}: {e}")
         try:
-            self.root.after(33, self.animate_bars)
+            self.root.after(delay, self.animate_bars)
         except tk.TclError:
             pass
 
-    def set_media_state(self, state):
-        self._media_state = state
-        text, color, active = {
-            "playing": ("Music is playing", self.GREEN, True),
-            "paused": ("Music is paused", "#ffb3c8", False),
-            "none": ("No music app open", self.MUTED, False),
-        }.get(state, ("Media status unavailable", self.MUTED, False))
-        text = tr(text)
-        self.bars_active = active
-        self.cv.itemconfig(self.hero_music, text=text, fill=color)
+    def tick_equalizer(self, now):
+        if not self.pill_bars:
+            return
+        if self.bars_active:
+            for i, item in enumerate(self.pill_bars):
+                half = 2 + 6 * abs(math.sin(now * 3.1 + i * 1.3)) * (0.6 + 0.4 * abs(math.sin(now * 1.1 + i)))
+                self.cv.coords(item, self.pill_bar_x[i], self.pill_cy - half, self.pill_bar_x[i], self.pill_cy + half)
+            self._eq_flat = False
+        elif not self._eq_flat:
+            for i, item in enumerate(self.pill_bars):
+                self.cv.coords(item, self.pill_bar_x[i], self.pill_cy - 2, self.pill_bar_x[i], self.pill_cy + 2)
+            self._eq_flat = True
+
+    def tick_disc(self, now):
+        """Advance the disc only while music is really playing; paused = frozen at the current angle."""
+        if not (self.spin_cover and self._disc_ready and self._disc_tk and self.np_key and self.np_status == "playing"):
+            self._disc_last_t = None
+            return
+        dt = 0.0 if self._disc_last_t is None else min(now - self._disc_last_t, 0.25)
+        self._disc_last_t = now
+        self._disc_angle = (self._disc_angle + dt * 360.0 / SPIN_PERIOD) % 360.0
+        idx = int(self._disc_angle // DISC_STEP) % len(self._disc_tk)
+        if idx != self._disc_idx:
+            self._disc_idx = idx
+            self.set_disc_image(self._disc_tk[idx])
+
+    # ---- cover: render once per track, off the UI thread ----
+    def begin_cover(self, key, thumb):
+        """A new track (or its artwork arriving late): drop the old frames and prepare the new ones."""
+        self._cover_gen += 1
+        self._np_thumb = thumb
+        self._disc_angle, self._disc_idx, self._disc_last_t = 0.0, 0, None
+        self.set_disc_image(self.placeholder_photo())      # nothing may still show the images freed below
+        self._disc_ready = False
+        self._disc_tk, self._disc_pending, self._disc_static = [], [], None
+        self._cover_job = (self._cover_gen, key, thumb) if key else None
+        self.kick_cover()
+
+    def kick_cover(self):
+        job = self._cover_job
+        if not job:
+            return
+        try:
+            if not self.root.winfo_viewable():      # hidden in the tray: render when it is shown again
+                return
+        except tk.TclError:
+            return
+        self._cover_job = None
+        gen, _key, thumb = job
+        if gen == self._cover_gen:
+            threading.Thread(target=self.cover_worker, args=(gen, thumb, self.spin_cover, self._disc_d), daemon=True).start()
+
+    def cover_worker(self, gen, thumb, spin, d):
+        """Background thread: PIL work only. PhotoImages are made on the UI thread."""
+        try:
+            sq = square_cover(thumb, d) if thumb is not None else placeholder_cover(d)
+            mask = disc_mask(d)
+            self.event("disc_static", (gen, disc_frame(sq, mask, 0)))
+            if not spin:
+                return
+            frames = []
+            for i in range(DISC_FRAMES):
+                if gen != self._cover_gen:
+                    return
+                frames.append(disc_frame(sq, mask, i * DISC_STEP))
+            self.event("disc_frames", (gen, frames))
+        except Exception as e:
+            write_error_log(f"Cover render: {type(e).__name__}: {e}")
+
+    def on_disc_static(self, gen, image):
+        if gen != self._cover_gen:
+            return
+        self._disc_static = ImageTk.PhotoImage(image)
+        if not self._disc_ready:
+            self.set_disc_image(self._disc_static)
+
+    def on_disc_frames(self, gen, frames):
+        if gen != self._cover_gen or not self.spin_cover:
+            return
+        self._disc_pending, self._disc_tk = list(frames), []
+        self.convert_frames(gen)
+
+    def convert_frames(self, gen):
+        """Turn rendered frames into PhotoImages a few at a time so the window never stalls."""
+        if gen != self._cover_gen:
+            return
+        for _ in range(4):
+            if not self._disc_pending:
+                break
+            self._disc_tk.append(ImageTk.PhotoImage(self._disc_pending.pop(0)))
+        if self._disc_pending:
+            self.root.after(8, lambda: self.convert_frames(gen))
+        else:
+            self._disc_ready = True
+            self._disc_idx = 0
+
+    def apply_spin_setting(self):
+        """Spinning cover switched on or off while a track is shown."""
+        self._cover_gen += 1                                # cancels any render in progress
+        if not self.spin_cover:
+            self._disc_ready = False
+            if self._disc_static is not None:
+                self.set_disc_image(self._disc_static)
+            self._disc_tk, self._disc_pending = [], []      # frames freed; the static cover stays
+        elif self.np_key:
+            self._cover_job = (self._cover_gen, self.np_key, self._np_thumb)
+            self.kick_cover()
+
+    def set_spin_cover(self, on):
+        self.spin_cover = bool(on)
+        self.save()
+        self.log_line("Spinning cover: " + ("on" if self.spin_cover else "off"))
+        self.apply_spin_setting()
+
+    # ---- now-playing data ----
+    def apply_nowplaying(self, snap):
+        status = snap.get("status", "none")
+        title, artist = snap.get("title", ""), snap.get("artist", "")
+        has = status != "none" and status != "unavailable" and (status in ("playing", "paused") or bool(title or artist))
+        key = snap.get("key") if has else None
+        prev_key = self.np_key
+        self.np_key = key
+        self.np_title_text, self.np_artist_text = (title, artist) if has else ("", "")
+        self.np_status = status if (has or status == "unavailable") else "none"
+        self.np_caps = (bool(snap.get("can_prev")), bool(snap.get("can_toggle")), bool(snap.get("can_next"))) if has else (False, False, False)
+        if key != prev_key:
+            self.begin_cover(key, snap.get("thumb"))
+        elif key and snap.get("thumb") is not None:
+            self.begin_cover(key, snap["thumb"])             # artwork arrived after the title
+        if not key:
+            self._paused_by_app = False                      # the player is gone: nothing left to resume
+        elif self.np_status == "playing" and self._paused_by_app and time.monotonic() - self._paused_at > 2.0:
+            self._paused_by_app = False                      # the person resumed it themselves
+        self.refresh_np()
+        self.refresh_game_ui()
+
+    def refresh_np(self):
+        if not self.np_btn:
+            return
+        if self.np_status == "unavailable":
+            title, artist = tr("Media status unavailable"), ""
+        elif self.np_key:
+            title, artist = self.np_title_text or tr("Unknown track"), self.np_artist_text
+        else:
+            title, artist = tr("Nothing playing"), tr("Play something in a media app")
+        width = self.sx(264)
+        self.cv.itemconfig(self.np_title, text=self.fit(title, width, self._np_font_title),
+                           fill=self.TEXT if self.np_key else self.MUTED)
+        self.cv.itemconfig(self.np_artist, text=self.fit(artist, width, self._np_font_artist))
+        self.refresh_np_buttons()
+
+    def np_enabled(self, tag):
+        index = {"np_prev": 0, "np_toggle": 1, "np_next": 2}[tag]
+        return bool(self.np_key) and self.np_caps[index] and time.monotonic() >= self.np_flash_until
+
+    def refresh_np_buttons(self):
+        for tag, b in self.np_btn.items():
+            kind = ("pause" if self.np_status == "playing" else "play") if tag == "np_toggle" else tag[3:]
+            state = "dim" if not self.np_enabled(tag) else ("hot" if b["hover"] else "normal")
+            self.cv.itemconfig(b["item"], image=b["imgs"][(kind, state)])
+
+    def np_hover(self, tag, on):
+        if tag in self.np_btn:
+            self.np_btn[tag]["hover"] = on
+            self.refresh_np_buttons()
+
+    def np_press(self, tag):
+        if not self.legal_accepted or self.np_busy or not self.np_enabled(tag):
+            return
+        action = {"np_prev": "prev", "np_toggle": "toggle", "np_next": "next"}[tag]
+        if action == "toggle":
+            self.controller.paused_by_us = False        # the person took over; don't resume it for them later
+            self._paused_by_app = False
+        self.np_busy = True
+        threading.Thread(target=self.np_control_worker, args=(action,), daemon=True).start()
+
+    def np_control_worker(self, action):
+        try:
+            ok = np_control(action)
+        except Exception as e:
+            write_error_log(f"Media control {action}: {type(e).__name__}: {e}")
+            ok = False
+        self.event("np_result", (action, ok))
+
+    def on_np_result(self, action, ok):
+        self.np_busy = False
+        NP_WAKE.set()
+        if not ok:      # False = the player refused it, None = no session any more
+            self.log_line(f"Media control '{action}' was not accepted by the player")
+            self.np_flash_until = time.monotonic() + 0.7
+            self.refresh_np_buttons()
+            self.root.after(750, self.refresh_np_buttons)
+
+    def on_music_event(self, value):
+        """VibePause itself paused or resumed the music (auto-pause during a match)."""
+        if value == "Paused":
+            self._paused_by_app, self._paused_at = True, time.monotonic()
+            self.np_status = "paused" if self.np_key else self.np_status
+        else:
+            self._paused_by_app = False
+            if self.np_key:
+                self.np_status = "playing"
+        NP_WAKE.set()
+        self.refresh_np()
+        self.refresh_game_ui()
 
     def start_media_watch(self):
         if self._media_watch_started:
@@ -2581,16 +3182,39 @@ class App:
         threading.Thread(target=self.media_watch, daemon=True).start()
 
     def media_watch(self):
+        """Watcher thread. Sleeps until a media event wakes it (or NP_POLL passes), asks the media loop
+        for a snapshot, and tells the UI only when something changed. Artwork is read once per track."""
         if not GSMTC_AVAILABLE:
-            self.event("media", "unknown")
+            self.event("nowplaying", {"status": "unavailable"})
             return
+        st = {"key": None, "tries": 0, "thumb": False}
+
+        def want_thumb(key):
+            if key != st["key"]:
+                return True
+            return not st["thumb"] and st["tries"] < 6      # artwork often arrives a moment after the title
+
         last = None
         while True:
-            state = media_status() or "unknown"
-            if state != last:
-                last = state
-                self.event("media", state)
-            time.sleep(3)
+            NP_WAKE.clear()
+            try:
+                snap = MEDIA.run(_np_snapshot(want_thumb), timeout=10)
+            except Exception as e:
+                snap = None
+                write_error_log(f"Now playing: {type(e).__name__}: {e}")
+            if snap is not None:
+                key = snap.get("key")
+                if key != st["key"]:
+                    st.update(key=key, tries=0, thumb=False)
+                if snap.pop("thumb_tried", False):
+                    st["tries"] += 1
+                    st["thumb"] = snap.get("thumb") is not None
+                sig = tuple(snap.get(k) for k in ("status", "key", "title", "artist", "can_prev", "can_toggle", "can_next"))
+                if snap.get("thumb") is not None or sig != last:
+                    last = sig
+                    self.event("nowplaying", snap)
+            NP_WAKE.wait(NP_POLL)
+            time.sleep(0.15)                                # let a burst of events settle into one refresh
 
     def trash_photo(self):
         cache = self.__dict__.setdefault("_settings_cache", {})
@@ -2620,7 +3244,7 @@ class App:
             self.close_settings()
             return
         self.settings_open = True
-        W, H = 330, 530
+        W, H = 330, 554
         x, y = self.WIN_W - 28 - W, 70
         cache = self.__dict__.setdefault("_settings_cache", {})
         if "base" not in cache:
@@ -2652,7 +3276,18 @@ class App:
         cv.create_text(24, note_y, text=tr("Off: the X button exits VibePause completely."), fill=self.MUTED,
                        font=self.F(9), anchor="nw", width=282)
 
-        cv.create_text(24, 154, text=tr("Event delay"), fill=self.TEXT, font=self.F(10), anchor="w")
+        cv.create_text(24, 150, text=tr("Spinning cover"), fill=self.TEXT, font=self.F(10),
+                                    anchor="w", tags=("sw2",), width=W - 24 - 40 - 24 - 10)
+        spin_switch = cv.create_image(W - 24 - 40, 139, image=self.switch_photo(self.spin_cover), anchor="nw", tags=("sw2",))
+        cv.create_image(0, 132, image=self.photo_clear(self.sx(W), self.sx(36)), anchor="nw", tags=("sw2",))
+
+        def flip_spin():
+            self.set_spin_cover(not self.spin_cover)
+            cv.itemconfig(spin_switch, image=self.switch_photo(self.spin_cover))
+
+        self.make_clickable("sw2", flip_spin, cv=cv)
+
+        cv.create_text(24, 178, text=tr("Event delay"), fill=self.TEXT, font=self.F(10), anchor="w")
         self.delay_settings = tk.StringVar(value=str(self.delay))
         vcmd = (self.root.register(lambda v: v == "" or (v.isdigit() and len(v) <= 5)), "%P")
         entry = tk.Entry(cv, textvariable=self.delay_settings, width=9, bg=self.PANEL2, fg=self.TEXT,
@@ -2660,7 +3295,7 @@ class App:
                          selectbackground="#2f6fd6", selectforeground="white", font=self.F(11),
                          highlightthickness=1, highlightbackground=self.BORDER, highlightcolor=self.GREEN,
                          takefocus=True, exportselection=False)
-        cv.create_window(24, 172, window=entry, anchor="nw", width=110, height=34)
+        cv.create_window(24, 196, window=entry, anchor="nw", width=110, height=34)
 
         def select_all(e):
             e.widget.select_range(0, "end"); e.widget.icursor("end"); return "break"
@@ -2675,7 +3310,7 @@ class App:
             except tk.TclError:
                 pass
         entry.after(50, focus_entry)
-        cv.create_text(148, 189, text=tr("milliseconds"), fill=self.MUTED, font=self.F(9), anchor="w")
+        cv.create_text(148, 213, text=tr("milliseconds"), fill=self.MUTED, font=self.F(9), anchor="w")
 
         def button(tag, top, label, command, fill, border, color, x=24, w=282, h=40, size=10):
             key = (tag, w, h)
@@ -2708,7 +3343,7 @@ class App:
 
         # ---- Hotkey (off by default; can always be cleared) ----
         HK_HINT = "Click the box, then press Ctrl, Alt or Shift plus a key. Applies right away."
-        cv.create_text(24, 234, text=tr("Hotkey: turn VibePause on/off"), fill=self.TEXT, font=self.F(10), anchor="w")
+        cv.create_text(24, 258, text=tr("Hotkey: turn VibePause on/off"), fill=self.TEXT, font=self.F(10), anchor="w")
         hk = {"capturing": False}
 
         def show_hotkey():
@@ -2758,21 +3393,21 @@ class App:
             show_hotkey()
             note(message, self.GREEN)
 
-        hk_text = button("hk", 250, "", start_capture, (255, 255, 255, 14), (255, 255, 255, 44), self.TEXT, x=24, w=230, h=36)
-        button("hkclear", 250, "", clear_hotkey, (255, 93, 143, 30), (255, 125, 170, 90), self.RED, x=262, w=44, h=36)
-        cv.create_image(262 + 22, 250 + 18, image=self.trash_photo(), tags=("hkclear",))
-        hk_hint = cv.create_text(24, 296, text=HK_HINT, fill=self.MUTED, font=self.F(8), anchor="nw", width=282)
+        hk_text = button("hk", 274, "", start_capture, (255, 255, 255, 14), (255, 255, 255, 44), self.TEXT, x=24, w=230, h=36)
+        button("hkclear", 274, "", clear_hotkey, (255, 93, 143, 30), (255, 125, 170, 90), self.RED, x=262, w=44, h=36)
+        cv.create_image(262 + 22, 274 + 18, image=self.trash_photo(), tags=("hkclear",))
+        hk_hint = cv.create_text(24, 320, text=HK_HINT, fill=self.MUTED, font=self.F(8), anchor="nw", width=282)
         show_hotkey()
 
         # ---- Updates + support ----
-        button("upd", 338, tr("Check for updates"), self.check_for_updates, (255, 255, 255, 18), (255, 255, 255, 50), self.TEXT)
-        self.update_status_item = cv.create_text(24, 392, text=f"VibePause {APP_VERSION}", fill=self.MUTED,
+        button("upd", 362, tr("Check for updates"), self.check_for_updates, (255, 255, 255, 18), (255, 255, 255, 50), self.TEXT)
+        self.update_status_item = cv.create_text(24, 416, text=f"VibePause {APP_VERSION}", fill=self.MUTED,
                                                  font=self.F(8), anchor="nw", width=282)
-        button("logdir", 428, tr("Open log folder"), self.open_log_folder, (255, 255, 255, 14), (255, 255, 255, 44),
+        button("logdir", 452, tr("Open log folder"), self.open_log_folder, (255, 255, 255, 14), (255, 255, 255, 44),
                self.TEXT, x=24, w=137, h=36, size=9)
-        button("diag", 428, tr("Copy diagnostics"), self.copy_diagnostics, (255, 255, 255, 14), (255, 255, 255, 44),
+        button("diag", 452, tr("Copy diagnostics"), self.copy_diagnostics, (255, 255, 255, 14), (255, 255, 255, 44),
                self.TEXT, x=169, w=137, h=36, size=9)
-        button("save", 474, tr("Save settings"), self.save_settings_page, (255, 93, 143, 62), (255, 125, 170, 125), self.RED)
+        button("save", 498, tr("Save settings"), self.save_settings_page, (255, 93, 143, 62), (255, 125, 170, 125), self.RED)
 
     def check_for_updates(self):
         """Settings > CHECK FOR UPDATES. Runs the network work off the UI thread."""
@@ -2921,8 +3556,9 @@ class App:
             fd, path = tempfile.mkstemp(prefix="VibePause_Setup_", suffix=".exe")
             os.close(fd)
             req = urllib.request.Request(url, headers={"User-Agent": f"VibePause/{APP_VERSION}"})
-            done, last_pct = 0, -1
+            done, last_pct, ctype = 0, -1, ""
             with urllib.request.urlopen(req, timeout=30) as resp, open(path, "wb") as out:
+                ctype = (resp.headers.get("Content-Type") or "").lower()
                 total = int(resp.headers.get("Content-Length") or expected_size or 0)
                 while True:
                     chunk = resp.read(1024 * 256)
@@ -2936,6 +3572,10 @@ class App:
                             last_pct = pct
                             self.event("update", ("progress", pct))
             if expected_size and done != expected_size:
+                write_error_log(f"Update download: received {done} bytes, expected {expected_size} "
+                                f"(Content-Type: {ctype or 'unknown'})")
+                if "text/html" in ctype:      # e.g. Google Drive's quota or confirmation page, not the file
+                    raise UpdateError("The download server sent a web page instead of the installer. Please try again later.")
                 raise UpdateError("The downloaded installer is incomplete. Please try again.")
             verify_installer(path, digest)
             self.event("update", ("downloaded", path, latest))
@@ -3311,6 +3951,7 @@ class App:
             f"VALORANT running: {self.valorant_running}",
             f"VALORANT log found: {LOG.exists()}",
             f"VibePause active: {self.active}",
+            f"Game status: {self.effective_game_state()}",
             f"Event delay: {self.delay} ms | start with Windows: {self.startup} | close to tray: {self.close_to_tray} "
             f"| auto-update: {self.auto_update_enabled} | hotkey: {self.hotkey or 'none'}",
             "Actions: " + ", ".join(f"{k}={v}" for k, v in self.actions.items()),
@@ -3358,6 +3999,7 @@ class App:
         self.actions = {k: v.get() for k, v in self.action_vars.items()}
         self.save()
         self.running = True
+        self.set_game_state("open" if self.valorant_running else "waiting")   # the monitor restarts from scratch
         self.controller.start()
         self.status_update(True)
         self.log_line("VibePause started automatically")
@@ -3382,25 +4024,8 @@ class App:
             text, color = "VALORANT not running", self.MUTED
         self.cv.itemconfig(self.status_text, text=self.status_fit(tr(text)), fill=color)
         self.cv.itemconfig(self.status_dot, fill=color, outline=color)
+        self.refresh_game_ui()
         self.update_tray()
-
-    def set_music_status(self, playing):
-        self.set_media_state("playing" if playing else "paused")
-
-    def force_play(self):
-        self._manual(True)
-
-    def force_pause(self):
-        self._manual(False)
-
-    def _manual(self, desired):
-        if not self.legal_accepted:
-            return
-        def work():
-            if self.controller.set_playing(desired):
-                self.event("music", "Playing" if desired else "Paused")
-                self.event("system", "Manual: " + ("Play" if desired else "Pause"))
-        threading.Thread(target=work, daemon=True).start()   # keep the UI responsive
 
     def start_quit_listener(self):
         """Lets a newly launched copy ask this one to exit cleanly (tray icon
@@ -3440,18 +4065,33 @@ class App:
             self._show_update_notification(value)
         elif kind == "event":
             event, action = value
-            self._hero_event = event
-            self.set_hero_text(tr(event))
+            if event in EVENT_STATES:
+                self.set_game_state(EVENT_STATES[event], action, record=True)
             self.log_line(f"{now}  {tr(event)}  [{tr(action)}]")
         elif kind == "music":
-            self.set_music_status(value == "Playing")
+            self.on_music_event(value)
             self.log_line(f"{now}  {tr('Music')}: {tr(value)}")
+        elif kind == "nowplaying":
+            self.apply_nowplaying(value)
+        elif kind == "np_result":
+            self.on_np_result(*value)
+        elif kind == "disc_static":
+            self.on_disc_static(*value)
+        elif kind == "disc_frames":
+            self.on_disc_frames(*value)
         elif kind == "volume":
             self.log_line(f"{now}  {tr('Volume')}: {value}%")
-        elif kind == "media":
-            self.set_media_state(value)
         elif kind == "valorant":
-            self.valorant_running = bool(value)
+            running = bool(value)
+            self.valorant_running = running
+            previous, self._valorant_seen = self._valorant_seen, running
+            if previous is None:
+                if running:
+                    self.set_game_state("open", record=True)
+                else:
+                    self.set_game_state("waiting")
+            elif running != previous:
+                self.set_game_state("open" if running else "waiting", record=True)
             self.status_update()
         else:
             text = f"{now}  {value}"
@@ -3482,10 +4122,9 @@ class App:
     _LOG_TS = re.compile(r"^\d{2}:\d{2}:\d{2}\s+")
 
     def log_line(self, text):
-        if not self.log_items:
-            return
-        # Collapse back-to-back identical lines (ignoring the timestamp) into one line with a
-        # counter, so a repeating failure shows as "... (x5)" instead of filling Live activity.
+        # Everything lands here for "Copy diagnostics" (Recent activity); the window itself only shows
+        # game events (Game status). Back-to-back identical lines (ignoring the timestamp) collapse
+        # into one line with a counter, so a repeating failure shows as "... (x5)".
         key = self._LOG_TS.sub("", text)
         if self.log_lines and key == self._last_log_key:
             self._last_log_count += 1
@@ -3494,7 +4133,6 @@ class App:
             self._last_log_key, self._last_log_count = key, 1
             self.log_lines.append(text)
             del self.log_lines[:-200]
-        self.refresh_log()
 
     LOG_THROTTLE = 300  # seconds before the same status/error message may appear again
 
@@ -3512,12 +4150,6 @@ class App:
             seen.clear()
         seen[key] = now
         self.log_line(text)
-
-    def clear_log(self):
-        self.log_lines.clear()
-        self._last_log_key, self._last_log_count = None, 0
-        if self.log_items:
-            self.refresh_log()
 
     def create_tray(self):
         if not TRAY_AVAILABLE or self.tray_icon:
