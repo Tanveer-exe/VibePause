@@ -2409,6 +2409,7 @@ class App:
         self.build_events()
         self.build_media_card()
         self.build_activity_card()
+        self.refresh_game_ui()
         self.cv.create_text(W // 2, H - 17, text="Made using Claude by tanveer-exe   |   Open Source",
                             fill=self.FAINT, font=self.F(8))
         self.cv.bind("<ButtonPress-1>", self.canvas_press)
@@ -2606,7 +2607,6 @@ class App:
             self.np_btn[tag] = {"item": item, "imgs": imgs, "hover": False}
             self.make_clickable(tag, lambda t=tag: self.np_press(t), lambda on, t=tag: self.np_hover(t, on))
         self.refresh_np()
-        self.refresh_game_ui()
 
     def build_np_pill(self, x0, cy):
         """Small status pill: a mini equalizer and a short text. Teal = playing, pink = paused by VibePause."""
