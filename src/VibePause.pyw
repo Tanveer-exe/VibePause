@@ -1,4 +1,4 @@
-import os, sys, re, math, time, hashlib, ctypes, threading, queue, json, winreg, urllib.request, urllib.error, tempfile, subprocess, platform, stat
+import os, sys, re, math, time, hashlib, ctypes, threading, queue, json, winreg, urllib.request, urllib.error, urllib.parse, tempfile, subprocess, platform, stat
 from pathlib import Path
 import tkinter as tk
 import ctypes.wintypes
@@ -314,10 +314,49 @@ def write_error_log(text, cooldown=ERROR_LOG_COOLDOWN):
         if path.exists() and path.stat().st_size > 200000:
             path.replace(APPDATA / "error.old.log")
         with open(path, "a", encoding="utf-8") as fh:
-            fh.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {APP_VERSION}\n{note}{text}\n\n")
+            fh.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {APP_VERSION} ({_system_summary()})\n{note}{text}\n\n")
     except OSError:
         pass
     return True
+
+
+_system_summary_cache = []
+
+def _system_summary():
+    """Windows + Python version for the log header, so an entry says what it ran on."""
+    if not _system_summary_cache:
+        try:
+            _system_summary_cache.append(f"{platform.platform()}, Python {platform.python_version()}")
+        except Exception:
+            _system_summary_cache.append("unknown system")
+    return _system_summary_cache[0]
+
+
+def install_exception_hooks():
+    """Anything that crashes outside a Tk callback (the main thread or a worker thread) used to vanish.
+    Send it to error.log too, then let Python's normal handling carry on."""
+    import traceback
+    previous = sys.excepthook
+
+    def main_hook(exc_type, exc, tb):
+        if not issubclass(exc_type, KeyboardInterrupt):
+            write_error_log("Uncaught exception:\n" + "".join(traceback.format_exception(exc_type, exc, tb)))
+        try:
+            previous(exc_type, exc, tb)
+        except Exception:
+            pass
+
+    def thread_hook(args):
+        if args.exc_type is SystemExit:
+            return
+        name = getattr(args.thread, "name", "unknown")
+        write_error_log(f"Uncaught exception in thread {name}:\n"
+                        + "".join(traceback.format_exception(args.exc_type, args.exc_value, args.exc_traceback)))
+
+    sys.excepthook = main_hook
+    threading.excepthook = thread_hook
+
+install_exception_hooks()
 
 
 class PROCESSENTRY32W(ctypes.Structure):
@@ -459,16 +498,6 @@ UPDATE_API = f"https://api.github.com/repos/{UPDATE_REPO}/releases?per_page=20"
 class UpdateError(Exception):
     """A real problem (network, GitHub, missing installer) with a message safe to show the user."""
 
-class RepoPrivateError(UpdateError):
-    """GitHub answered 404 to the anonymous release request: the repo is private (or gone).
-    check_for_update() reacts to this by using the Google Drive fallback instead."""
-
-# Google Drive fallback, used only while the GitHub repo is private. Both files are shared as
-# "Anyone with the link". Re-upload them with Drive's "Manage versions" so these IDs never change.
-DRIVE_MANIFEST_ID = "1zRpcOnWckaOE3PID73R-q7P7GgNCWC1T"    # latest.json (made by make_latest.py)
-DRIVE_INSTALLER_ID = "1Ok9FeCHM-zyra-fuBhrJcBFkHRqiZpCh"   # VibePause_Setup.exe
-DRIVE_DOWNLOAD = "https://drive.google.com/uc?export=download&confirm=t&id={}"
-
 def version_tuple(value):
     """'v0.1.1' -> (0, 1, 1). Ignores a leading v and any suffix such as '-alpha'."""
     m = re.match(r"^\s*[vV]?(\d+(?:\.\d+)*)", str(value or ""))
@@ -558,8 +587,6 @@ def fetch_releases(timeout=UPDATE_CHECK_TIMEOUT):
             data = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         write_error_log(f"Update check: HTTP {e.code}")
-        if e.code == 404:
-            raise RepoPrivateError("GitHub repository is not public.")
         raise UpdateError("Can't check for updates right now. Try again later.")
     except (urllib.error.URLError, TimeoutError, OSError) as e:
         write_error_log(f"Update check: {type(e).__name__}: {e}")
@@ -570,43 +597,9 @@ def fetch_releases(timeout=UPDATE_CHECK_TIMEOUT):
         raise UpdateError("Can't check for updates right now. Try again later.")
     return data
 
-def fetch_drive_update(current_version, timeout=UPDATE_CHECK_TIMEOUT):
-    """Google Drive fallback. Reads latest.json and returns the same tuple pick_update() does."""
-    req = urllib.request.Request(DRIVE_DOWNLOAD.format(DRIVE_MANIFEST_ID),
-                                 headers={"User-Agent": f"VibePause/{APP_VERSION}"})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read(65536).decode("utf-8-sig"))
-        if not isinstance(data, dict):
-            raise ValueError("manifest is not an object")
-        latest = str(data.get("version", "")).strip().lstrip("vV")
-        latest_v = version_tuple(latest)
-        if latest_v is None:
-            raise ValueError("manifest has no valid version")
-        size = int(data.get("size") or 0)
-    except urllib.error.HTTPError as e:
-        write_error_log(f"Drive update check: HTTP {e.code}")
-        raise UpdateError("Can't check for updates right now. Try again later.")
-    except (urllib.error.URLError, TimeoutError, OSError) as e:
-        write_error_log(f"Drive update check: {type(e).__name__}: {e}")
-        raise UpdateError("Can't check for updates. Check your internet connection.")
-    except (ValueError, TypeError) as e:
-        write_error_log(f"Drive update check: bad manifest: {e}")
-        raise UpdateError("Can't check for updates right now. Try again later.")
-    if latest_v <= (version_tuple(current_version) or (0,)):
-        return ("current", latest)
-    sha = str(data.get("sha256", "")).strip().lower()
-    if not re.fullmatch(r"[0-9a-f]{64}", sha):     # Drive has no digest of its own, so insist on ours
-        raise UpdateError(f"VibePause {latest} was published, but its update information is incomplete.")
-    notes = clean_release_notes(data.get("notes"))
-    return ("update", latest, DRIVE_DOWNLOAD.format(DRIVE_INSTALLER_ID), size, "sha256:" + sha, notes)
-
 def check_for_update(current_version):
-    """GitHub first. If the repo is private (404 for anonymous requests), use Google Drive instead."""
-    try:
-        return pick_update(fetch_releases(), current_version)
-    except RepoPrivateError:
-        return fetch_drive_update(current_version)
+    """Look for a newer VibePause release on GitHub."""
+    return pick_update(fetch_releases(), current_version)
 
 def verify_installer(path, digest):
     with open(path, "rb") as fh:
@@ -3432,9 +3425,11 @@ class App:
             else:
                 self.event("update", ("current", result[1]))
         except UpdateError as e:
+            write_error_log(f"Update check failed: {e}")
             self.event("update", ("error", str(e)))
         except Exception as e:
-            write_error_log(f"Update check: {type(e).__name__}: {e}")
+            import traceback
+            write_error_log(f"Update check: {type(e).__name__}: {e}\n{traceback.format_exc()}")
             self.event("update", ("error", "Can't check for updates right now. Try again later."))
 
     def handle_update_event(self, value):
@@ -3521,7 +3516,12 @@ class App:
             if result[0] == "update":
                 return True, result[1], result[2], result[3], result[4], result[5]
             return False, result[1], "", 0, "", ""
-        except Exception:
+        except UpdateError as e:
+            write_error_log(f"Background update check failed: {e}")
+            return None
+        except Exception as e:
+            import traceback
+            write_error_log(f"Background update check: {type(e).__name__}: {e}\n{traceback.format_exc()}")
             return None
 
     def update_prompt_text(self, latest, notes, question, show_current=False):
@@ -3552,6 +3552,7 @@ class App:
 
     def _download_update_worker(self, latest, url, expected_size, digest=""):
         path = None
+        done, ctype = 0, ""
         try:
             fd, path = tempfile.mkstemp(prefix="VibePause_Setup_", suffix=".exe")
             os.close(fd)
@@ -3574,17 +3575,22 @@ class App:
             if expected_size and done != expected_size:
                 write_error_log(f"Update download: received {done} bytes, expected {expected_size} "
                                 f"(Content-Type: {ctype or 'unknown'})")
-                if "text/html" in ctype:      # e.g. Google Drive's quota or confirmation page, not the file
+                if "text/html" in ctype:      # e.g. an error or login page, not the file
                     raise UpdateError("The download server sent a web page instead of the installer. Please try again later.")
                 raise UpdateError("The downloaded installer is incomplete. Please try again.")
             verify_installer(path, digest)
             self.event("update", ("downloaded", path, latest))
         except UpdateError as e:
             self.discard_file(path)
+            write_error_log(f"Update download to {latest} failed: {e} "
+                            f"(received {done} of {expected_size or 'unknown'} bytes, "
+                            f"Content-Type: {ctype or 'unknown'}, host: {urllib.parse.urlparse(url).hostname})")
             self.event("update", ("error", str(e)))
         except Exception as e:
+            import traceback
             self.discard_file(path)
-            write_error_log(f"Update download: {type(e).__name__}: {e}")
+            write_error_log(f"Update download to {latest}: {type(e).__name__}: {e} "
+                            f"(received {done} of {expected_size or 'unknown'} bytes)\n{traceback.format_exc()}")
             self.event("update", ("error", "Update download failed. Try again later."))
 
     def discard_file(self, path):
