@@ -27,7 +27,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshot.png" alt="VibePause main window" width="760">
+  <img src="docs/screenshot.png" alt="VibePause main window" width="880">
 </p>
 
 ---
