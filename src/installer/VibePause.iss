@@ -5,14 +5,18 @@
 [Setup]
 AppId={{D5B8B6B7-7B61-4D1D-9D73-3A1B9A0D1E42}
 AppName={#MyAppName}
-AppVersion=1.0.2
+AppVersion=0.1.3
 ; Keep these three in step with AppVersion. SignPath requires the product name and version to be set
 ; the same way in every signed file.
-VersionInfoVersion=1.0.2.0
+VersionInfoVersion=0.1.3.0
 VersionInfoProductName=VibePause
-VersionInfoProductVersion=1.0.2.0
+VersionInfoProductVersion=0.1.3.0
 VersionInfoDescription=VibePause Setup
 AppPublisher={#MyAppPublisher}
+AppPublisherURL=https://github.com/Tanveer-exe/VibePause
+AppSupportURL=https://github.com/Tanveer-exe/VibePause/issues
+AppUpdatesURL=https://github.com/Tanveer-exe/VibePause/releases
+AppCopyright=Copyright (C) 2026 tanveer-exe
 DefaultDirName={localappdata}\Programs\VibePause
 DefaultGroupName=VibePause
 DisableProgramGroupPage=yes
