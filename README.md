@@ -154,6 +154,10 @@ VibePause is building a track record and plans to apply for free code signing fr
 - Privacy policy: see the [Privacy Policy](src/PRIVACY_POLICY.md). VibePause collects no personal data and only contacts GitHub, to check for and download updates.
 - Full details: [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md)
 
+<p align="center">
+  <img src="docs/downloads.svg" alt="Line chart of total VibePause installer downloads over time" width="720">
+</p>
+
 ## Privacy
 
 VibePause runs locally and does not require:
