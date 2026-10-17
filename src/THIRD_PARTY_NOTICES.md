@@ -99,7 +99,7 @@ VibePause uses the following third-party libraries and components:
 - Source: https://pypi.org/project/psutil/
 
 ### Notes
-This list includes libraries directly used in VibePause as of version 0.1.3.
+This list includes libraries directly used in VibePause as of version 1.0.3.
 Transitive dependencies are not listed individually but are subject to their own licenses.
 The Windows OCR engine and Windows media controls are part of Windows, not of VibePause.
 Names of media apps (Chrome, YouTube Music, Apple Music, Spotify) are trademarks of their respective owners and are used only, as plain text, to show which apps VibePause can work with.

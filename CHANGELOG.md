@@ -1,5 +1,5 @@
 # Changelog
-## 0.1.3
+## 1.0.3
 
 - Add a now-playing card to the main window. It shows the title, artist and artwork of what is playing, with previous, play/pause and next buttons that follow what the player supports. It replaces the large status circle, the waveform and the old Play/Pause buttons.
 - The artwork is a slowly spinning disc. It spins only while music plays, stops while the window is hidden or minimized, and can be switched off with the new "Spinning cover" setting.
