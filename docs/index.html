@@ -3,14 +3,42 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VibePause: your music follows the round</title>
-<meta name="description" content="VibePause pauses your music when a VALORANT round starts and plays it again when you die, buy, or return to the lobby. Free and open source for Windows.">
+<title>VibePause – Auto-Pause Music in VALORANT (Free Windows App)</title>
+<meta name="description" content="Free open-source Windows app that auto-pauses Spotify, YouTube Music and more when a VALORANT round starts, and resumes when you die. No overlay or injection.">
 <meta name="theme-color" content="#0a0a1c">
 <meta property="og:title" content="VibePause: your music follows the round">
 <meta property="og:description" content="Your game. Your music. Automatically synced. Free and open source for Windows.">
 <meta property="og:image" content="https://tanveer-exe.github.io/VibePause/banner.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image:alt" content="VibePause: your game, your music, automatically synced">
+<link rel="canonical" href="https://tanveer-exe.github.io/VibePause/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="VibePause">
+<meta property="og:url" content="https://tanveer-exe.github.io/VibePause/">
+<meta name="twitter:title" content="VibePause – Auto-Pause Music in VALORANT">
+<meta name="twitter:description" content="Free open-source Windows app that pauses your music when a VALORANT round starts and resumes when you die.">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "VibePause",
+  "operatingSystem": "Windows",
+  "applicationCategory": "MultimediaApplication",
+  "description": "Free open-source Windows app that pauses your music when a VALORANT round starts and resumes it when you die, buy, or return to the lobby.",
+  "url": "https://tanveer-exe.github.io/VibePause/",
+  "downloadUrl": "https://github.com/Tanveer-exe/VibePause/releases/latest/download/VibePause_Setup.exe",
+  "license": "https://www.gnu.org/licenses/gpl-3.0.html",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "author": {
+    "@type": "Person",
+    "name": "tanveer-exe"
+  }
+}
+</script>
 <link rel="icon" href="favicon.png">
 <style>
 :root{
@@ -155,6 +183,14 @@ code{font:500 .92em ui-monospace,Consolas,monospace;background:rgba(255,255,255,
 .legend i{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:8px;vertical-align:-1px}
 .os .actions{margin-top:28px}
 
+.faq{display:grid;gap:12px;max-width:50rem}
+.faq details{padding:0}
+.faq summary{cursor:pointer;list-style:none;padding:20px 24px;font:700 1.08rem var(--display);display:flex;justify-content:space-between;align-items:center;gap:16px}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{content:"+";font:600 1.5rem var(--display);color:var(--teal);flex:none}
+.faq details[open] summary::after{content:"\2212"}
+.faq details p{padding:0 24px 22px;color:var(--muted)}
+
 footer{padding:50px 0 70px;color:var(--muted);font-size:.95rem}
 footer .row{display:flex;flex-wrap:wrap;justify-content:space-between;gap:18px}
 footer p+p{margin-top:8px;max-width:44rem}
@@ -187,6 +223,7 @@ footer a{text-underline-offset:3px}
       <a href="#try">Try it</a>
       <a href="#how">How it works</a>
       <a href="#safe">Safety</a>
+      <a href="#faq">FAQ</a>
       <a href="https://github.com/Tanveer-exe/VibePause">GitHub</a>
     </div>
   </nav>
@@ -283,6 +320,38 @@ footer a{text-underline-offset:3px}
         </ul>
         <p class="fine">Riot Games can change its rules at any time, and VibePause is used at your own risk. See the <a href="terms.html">Terms</a>.</p>
       </div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <div class="head">
+      <h2>Frequently asked questions</h2>
+    </div>
+    <div class="faq">
+      <details class="glass">
+        <summary>How do I automatically pause my music when a VALORANT round starts?</summary>
+        <p>Install VibePause, start your music app, and launch VALORANT. It pauses your music at round start and resumes it when you die, buy, or return to the lobby. You can change what each event does in the app.</p>
+      </details>
+      <details class="glass">
+        <summary>Can I get banned for using VibePause?</summary>
+        <p>VibePause is a separate app. It doesn't inject into VALORANT, read game memory, change game files, send gameplay input, or draw an overlay. It reads a local log file, uses Windows' built-in OCR to spot eliminations, and controls Windows media playback. Riot Games can change its rules at any time, so use it at your own risk.</p>
+      </details>
+      <details class="glass">
+        <summary>Which music apps does it work with?</summary>
+        <p>It works with players that support Windows' standard media controls, such as Spotify, YouTube Music, Apple Music and browser players. Compatibility isn't guaranteed for every app.</p>
+      </details>
+      <details class="glass">
+        <summary>Is VibePause free?</summary>
+        <p>Yes. It's free, open source under the GPL-3.0 license, and needs no account or administrator rights.</p>
+      </details>
+      <details class="glass">
+        <summary>Why does Windows show a SmartScreen warning?</summary>
+        <p>The installer isn't code-signed yet. Click More info, then Run anyway, and only if you downloaded it from this site or the official Releases page. You can also check the SHA-256 file on the release.</p>
+      </details>
+      <details class="glass">
+        <summary>Can it lower the volume instead of pausing?</summary>
+        <p>Yes. Switch to Volume mode and give each event its own volume from 0% to 100%.</p>
+      </details>
     </div>
   </section>
 
