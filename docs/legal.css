@@ -1,0 +1,45 @@
+:root{
+  --ink:#0a0a1c;
+  --panel:rgba(255,255,255,.065);
+  --edge:rgba(255,255,255,.16);
+  --text:#f1efff;
+  --muted:#d0cef0;
+  --teal:#2fe3c6;
+  --display:"Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
+  --body:"Segoe UI",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;color:var(--text);font:400 1.0625rem/1.7 var(--body);
+  background:
+    radial-gradient(60rem 42rem at 6% -8%,rgba(104,66,232,.50),transparent 70%),
+    radial-gradient(54rem 40rem at 104% 104%,rgba(18,196,172,.32),transparent 70%),
+    var(--ink);
+  background-attachment:fixed;
+  min-height:100vh;
+}
+a{color:var(--text);text-underline-offset:3px}
+:focus-visible{outline:2px solid var(--teal);outline-offset:3px;border-radius:6px}
+.skip{position:absolute;left:12px;top:-60px;background:var(--ink);color:var(--text);padding:10px 16px;border-radius:10px;border:1px solid var(--edge);z-index:10}
+.skip:focus{top:12px}
+.wrap{width:min(820px,100% - 40px);margin-inline:auto}
+nav{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:22px 0}
+.brand{display:flex;align-items:center;gap:12px;font:800 1.25rem var(--display);text-decoration:none}
+.brand img{width:34px;height:34px;border-radius:9px}
+.navlinks{display:flex;gap:6px;flex-wrap:wrap}
+.navlinks a{padding:9px 16px;border-radius:999px;text-decoration:none;color:var(--muted);font-weight:500}
+.navlinks a:hover,.navlinks a[aria-current="page"]{color:var(--text);background:var(--panel)}
+main{padding:24px 0 40px}
+article{background:linear-gradient(180deg,rgba(255,255,255,.10),var(--panel));border:1px solid var(--edge);border-radius:24px;padding:clamp(22px,5vw,48px)}
+h1,h2{font-family:var(--display);line-height:1.15;letter-spacing:-.01em;margin:0}
+h1{font-size:clamp(2rem,5vw,2.8rem);font-weight:800;margin-bottom:6px}
+h2{font-size:1.45rem;font-weight:700;margin:2.2rem 0 .6rem}
+h3{font-family:var(--display);font-size:1.15rem;margin:1.6rem 0 .4rem}
+p{margin:.8rem 0;overflow-wrap:anywhere}
+ul{padding-left:1.3rem;margin:.8rem 0}
+li{margin:.35rem 0;overflow-wrap:anywhere}
+code{font:500 .92em ui-monospace,Consolas,monospace;background:rgba(255,255,255,.08);padding:2px 7px;border-radius:7px}
+footer{padding:20px 0 60px;color:var(--muted);font-size:.95rem}
+footer ul{list-style:none;padding:0;display:flex;flex-wrap:wrap;gap:8px 22px;margin:0 0 12px}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}

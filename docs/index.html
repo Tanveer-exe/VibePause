@@ -10,10 +10,8 @@
 <meta property="og:description" content="Your game. Your music. Automatically synced. Free and open source for Windows.">
 <meta property="og:image" content="https://tanveer-exe.github.io/VibePause/banner.png">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image:alt" content="VibePause: your game, your music, automatically synced">
 <link rel="icon" href="favicon.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{
   --ink:#0a0a1c;
@@ -21,12 +19,12 @@
   --panel-strong:rgba(255,255,255,.11);
   --edge:rgba(255,255,255,.16);
   --text:#f1efff;
-  --muted:#a8a6cf;
+  --muted:#d0cef0;
   --violet:#6842e8;
   --pink:#ff5d8f;
   --teal:#2fe3c6;
-  --display:"Bricolage Grotesque","Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
-  --body:"Figtree","Segoe UI",system-ui,sans-serif;
+  --display:"Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
+  --body:"Segoe UI",system-ui,sans-serif;
 }
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
@@ -35,13 +33,15 @@ body{
   background:
     radial-gradient(60rem 42rem at 6% -8%,rgba(104,66,232,.62),transparent 70%),
     radial-gradient(40rem 30rem at 62% -12%,rgba(214,56,124,.30),transparent 70%),
-    radial-gradient(54rem 40rem at 104% 104%,rgba(18,196,172,.52),transparent 70%),
+    radial-gradient(54rem 40rem at 104% 104%,rgba(18,196,172,.32),transparent 70%),
     radial-gradient(34rem 26rem at -4% 100%,rgba(58,92,224,.28),transparent 70%),
     var(--ink);
   background-attachment:fixed;
   min-height:100vh;
 }
 a{color:inherit}
+.skip{position:absolute;left:12px;top:-60px;background:var(--ink);color:var(--text);padding:10px 16px;border-radius:10px;border:1px solid var(--edge);z-index:10}
+.skip:focus{top:12px}
 :focus-visible{outline:2px solid var(--teal);outline-offset:3px;border-radius:6px}
 .wrap{width:min(1120px,100% - 40px);margin-inline:auto}
 h1,h2,h3{font-family:var(--display);line-height:1.08;margin:0;letter-spacing:-.02em}
@@ -71,12 +71,12 @@ nav{display:flex;align-items:center;justify-content:space-between;padding:22px 0
 .btn:hover{background:var(--panel-strong)}
 .btn:active{transform:translateY(1px)}
 .btn.primary{
-  background:linear-gradient(135deg,var(--pink),#d83b7a);border-color:rgba(255,255,255,.28);color:#fff;
-  box-shadow:0 10px 34px -10px rgba(255,93,143,.75);
+  background:linear-gradient(135deg,#c2306b,#a82a5c);border-color:rgba(255,255,255,.28);color:#fff;
+  box-shadow:0 10px 34px -10px rgba(194,48,107,.75);
 }
 .btn.kofi{border-color:rgba(255,94,91,.5);background:rgba(255,94,91,.14)}
 .btn.kofi:hover{background:rgba(255,94,91,.26)}
-.btn.primary:hover{background:linear-gradient(135deg,#ff74a0,#e5488a)}
+.btn.primary:hover{background:linear-gradient(135deg,#cc3873,#b82d63)}
 
 .hero{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.3fr);gap:48px;align-items:center;padding:56px 0 90px}
 .hero .lede{margin-top:22px}
@@ -99,7 +99,7 @@ section{padding:70px 0}
 .events button:focus-visible{outline:2px solid var(--teal)}
 .chip{font:600 .82rem var(--body);padding:4px 12px;border-radius:999px}
 .chip.Play{background:rgba(47,227,198,.16);color:var(--teal)}
-.chip.Pause{background:rgba(255,93,143,.18);color:var(--pink)}
+.chip.Pause{background:rgba(255,93,143,.18);color:#ff7aa3}
 .chip.None{background:rgba(255,255,255,.09);color:var(--muted)}
 .chip.Vol{background:rgba(104,66,232,.28);color:#cfc4ff}
 .modes{display:inline-flex;padding:4px;border-radius:999px;background:var(--panel);border:1px solid var(--edge);margin:0 0 14px 4px;gap:2px}
@@ -132,7 +132,7 @@ section{padding:70px 0}
 .step{padding:28px;position:relative}
 .step::before{
   counter-increment:s;content:counter(s);display:grid;place-items:center;width:38px;height:38px;border-radius:50%;
-  font:800 1rem var(--display);background:linear-gradient(135deg,var(--violet),var(--pink));margin-bottom:18px;
+  font:800 1rem var(--display);background:linear-gradient(135deg,var(--violet),#c2306b);margin-bottom:18px;
 }
 .step p{color:var(--muted);margin-top:10px}
 code{font:500 .92em ui-monospace,Consolas,monospace;background:rgba(255,255,255,.08);padding:2px 7px;border-radius:7px}
@@ -153,6 +153,7 @@ code{font:500 .92em ui-monospace,Consolas,monospace;background:rgba(255,255,255,
 footer{padding:50px 0 70px;color:var(--muted);font-size:.95rem}
 footer .row{display:flex;flex-wrap:wrap;justify-content:space-between;gap:18px}
 footer p+p{margin-top:8px;max-width:44rem}
+footer .links{list-style:none;padding:0;margin:0;display:flex;flex-wrap:wrap;gap:8px 22px}
 footer a{text-underline-offset:3px}
 
 @media (max-width:900px){
@@ -173,8 +174,9 @@ footer a{text-underline-offset:3px}
 </style>
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 <div class="wrap">
-  <nav>
+  <nav aria-label="Main">
     <a class="brand" href="#top"><img src="logo.png" alt="">VibePause</a>
     <div class="navlinks">
       <a href="#try">Try it</a>
@@ -183,6 +185,7 @@ footer a{text-underline-offset:3px}
     </div>
   </nav>
 
+  <main id="main">
   <header class="hero" id="top">
     <div>
       <h1>Your music follows the round.</h1>
@@ -191,7 +194,7 @@ footer a{text-underline-offset:3px}
         <a class="btn primary" id="download" href="https://github.com/Tanveer-exe/VibePause/releases/latest/download/VibePause_Setup.exe">Download for Windows</a>
         <a class="btn" href="https://github.com/Tanveer-exe/VibePause">View source</a>
       </div>
-      <p class="fine">Free, no account, no admin rights. Available in 15 languages. The installer is not code-signed yet, so Windows may show a SmartScreen warning. Choose More info, then Run anyway.</p>
+      <p class="fine">Free, no account, no admin rights. Available in 15 languages (machine-translated, so some wording may be off). The installer is not code-signed yet, so Windows may show a SmartScreen warning. Choose More info, then Run anyway.</p>
     </div>
     <div>
       <img class="shot" src="screenshot.png" width="2610" height="1618" alt="The VibePause window: now playing card, Music behaviour grid with the Pause and Volume switch, supported media and game status">
@@ -233,12 +236,12 @@ footer a{text-underline-offset:3px}
   <section id="how">
     <div class="head">
       <h2>How it works</h2>
-      <p>No overlay, no hooks into the game. VibePause only reads a file and presses play or pause for you.</p>
+      <p>No overlay, no hooks into the game. VibePause reads VALORANT's log file, uses Windows' built-in OCR to spot eliminations, and controls your media through Windows.</p>
     </div>
     <div class="flow">
       <div class="step glass"><h3>It reads the game log</h3><p>VALORANT writes <code>ShooterGame.log</code> on your own PC. VibePause follows that file to spot round starts and match changes, and uses Windows' built-in OCR to detect when you're eliminated.</p></div>
       <div class="step glass"><h3>It matches the event</h3><p>Each event has the action you chose: Play, Pause, or None, or a volume level in Volume mode. A delay setting lets you shift when it fires.</p></div>
-      <div class="step glass"><h3>It controls your media</h3><p>It uses Windows media controls, so Spotify, YouTube Music, Apple Music and browser players all work. Call apps like Discord are left alone.</p></div>
+      <div class="step glass"><h3>It controls your media</h3><p>It uses Windows media controls, so it should work with players that support them, such as Spotify, YouTube Music, Apple Music and browser players. Compatibility is not guaranteed. Call apps like Discord are left alone.</p></div>
     </div>
   </section>
 
@@ -268,6 +271,7 @@ footer a{text-underline-offset:3px}
           <li>No in-game overlay</li>
           <li>No Riot account details</li>
         </ul>
+        <p class="fine">Riot Games can change its rules at any time, and VibePause is used at your own risk. See the <a href="terms.html">Terms</a>.</p>
       </div>
     </div>
   </section>
@@ -286,14 +290,24 @@ footer a{text-underline-offset:3px}
       </div>
     </div>
   </section>
+  </main>
 
   <footer>
     <div class="row">
       <p>Made by tanveer-exe together with Claude.</p>
-      <p><a href="https://github.com/Tanveer-exe/VibePause/releases">Releases</a> &nbsp; <a href="https://ko-fi.com/tanveerexe">Ko-fi</a> &nbsp; <a href="https://github.com/Tanveer-exe/VibePause/blob/main/LICENSE">License</a> &nbsp; <a href="https://github.com/Tanveer-exe/VibePause/blob/main/src/PRIVACY_POLICY.md">Privacy</a> &nbsp; <a href="https://github.com/Tanveer-exe/VibePause/blob/main/src/TERMS_AND_CONDITIONS.md">Terms</a></p>
+      <ul class="links">
+        <li><a href="https://github.com/Tanveer-exe/VibePause/releases">Releases</a></li>
+        <li><a href="https://ko-fi.com/tanveerexe">Ko-fi</a></li>
+        <li><a href="https://github.com/Tanveer-exe/VibePause/blob/main/LICENSE">License</a></li>
+        <li><a href="privacy.html">Privacy Policy</a></li>
+        <li><a href="terms.html">Terms and Conditions</a></li>
+        <li><a href="cookies.html">Cookie Policy</a></li>
+      </ul>
     </div>
     <p id="code-signing"><strong>Code signing policy.</strong> VibePause is building a track record and plans to apply for free code signing from the <a href="https://signpath.org/">SignPath Foundation</a>. Until then, the installer is not signed (see <a href="#install">how to install it with Windows SmartScreen</a>). Committers, reviewers and approvers: <a href="https://github.com/Tanveer-exe">tanveer-exe</a>. VibePause collects no personal data and only contacts GitHub to check for and download updates (see the <a href="https://github.com/Tanveer-exe/VibePause/blob/main/src/PRIVACY_POLICY.md">Privacy Policy</a>). <a href="https://github.com/Tanveer-exe/VibePause/blob/main/CODE_SIGNING_POLICY.md">Read the code signing policy</a>.</p>
-    <p>VibePause is an independent community project. It is not affiliated with, endorsed by, or sponsored by Riot Games. VALORANT and Riot Games are trademarks of Riot Games, Inc.</p>
+    <p><strong>About this site.</strong> VibePause is a free, non-commercial, open-source project by tanveer-exe, an individual in India. Contact: <a href="https://github.com/Tanveer-exe/VibePause/issues">open a GitHub issue</a>. This site sets no cookies and has no analytics or ads. Donations on Ko-fi are voluntary gifts (see the <a href="terms.html">Terms</a>).</p>
+    <p><strong>Accessibility.</strong> We aim for this site to work with a keyboard and screen readers. The Windows app itself uses a custom-drawn window that is mostly mouse-operated and is not yet fully usable with a keyboard or screen reader. If something blocks you, please <a href="https://github.com/Tanveer-exe/VibePause/issues">tell us</a>.</p>
+    <p>VibePause is an independent community project. It isn't endorsed by Riot Games and doesn't reflect the views or opinions of Riot Games or anyone officially involved in producing or managing Riot Games properties. VALORANT and Riot Games are trademarks or registered trademarks of Riot Games, Inc. The names Chrome, YouTube Music, Apple Music, Spotify and other names belong to their owners.</p>
   </footer>
 </div>
 
@@ -371,7 +385,9 @@ function drawLangs(data){
     seg.title=name+" "+pct.toFixed(1)+"%";
     bar.appendChild(seg);
     const item=document.createElement("span");
-    item.innerHTML='<i style="background:'+color+'"></i><b>'+name+'</b> '+pct.toFixed(1)+'%';
+    const dot=document.createElement("i");dot.style.background=color;
+    const label=document.createElement("b");label.textContent=name;
+    item.append(dot,label," "+pct.toFixed(1)+"%");
     legend.appendChild(item);
   });
 }
