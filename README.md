@@ -81,6 +81,10 @@ Each event can be configured independently as:
 
 You can also reset all events to their default settings.
 
+### Now playing, with media controls
+
+The main window shows what's currently playing, with its artwork, title and artist, plus **Previous**, **Play/Pause** and **Next** buttons so you can control your music without leaving VibePause. A small status pill next to it shows what VibePause is doing (waiting for VALORANT, in a match, paused for your match, and so on), so you always know why your music just changed.
+
 ### Pause mode and Volume mode
 
 A switch at the top of the **Music behaviour** card changes how events control your music:

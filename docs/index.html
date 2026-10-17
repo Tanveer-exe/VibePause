@@ -84,6 +84,9 @@ nav{display:flex;align-items:center;justify-content:space-between;padding:22px 0
 .fine{margin-top:18px;font-size:.92rem;color:var(--muted);max-width:30rem}
 .shot{padding:10px;border-radius:30px;box-shadow:0 40px 90px -30px rgba(0,0,0,.8),0 0 120px -20px rgba(104,66,232,.5)}
 .shot img{display:block;width:100%;height:auto;border-radius:22px}
+.shot-frame{position:relative;width:100%;aspect-ratio:1040/650;border-radius:22px;overflow:hidden;background:#0a0a1c}
+.shot-frame iframe{position:absolute;top:0;left:0;width:1040px;height:650px;border:0;transform-origin:top left}
+.shot-caption{margin-top:12px;font-size:.86rem;color:var(--muted);text-align:center}
 
 section{padding:70px 0}
 .head{max-width:40rem;margin-bottom:40px}
@@ -180,7 +183,14 @@ footer a{text-underline-offset:3px}
       </div>
       <p class="fine">Free, no account, no admin rights. Available in 15 languages. The installer is not code-signed yet, so Windows may show a SmartScreen warning. Choose More info, then Run anyway.</p>
     </div>
-    <div class="shot glass"><img src="screenshot.png" width="1040" height="648" alt="The VibePause window showing the current game state, eight music actions and live activity"></div>
+    <div>
+      <div class="shot glass">
+        <div class="shot-frame">
+          <iframe src="app-preview.html" title="A live preview of the VibePause window: now playing card with a spinning disc, the Music behaviour grid, and the Pause/Volume switch" loading="lazy"></iframe>
+        </div>
+      </div>
+      <p class="shot-caption">Live preview &mdash; click the Pause/Volume switch to see both modes.</p>
+    </div>
   </header>
 
   <section id="try">
@@ -267,6 +277,16 @@ footer a{text-underline-offset:3px}
 </div>
 
 <script>
+function fitShotFrame(){
+  document.querySelectorAll(".shot-frame").forEach(wrap=>{
+    const ifr=wrap.querySelector("iframe");
+    if(!ifr)return;
+    ifr.style.transform="scale("+(wrap.clientWidth/1040)+")";
+  });
+}
+window.addEventListener("resize",fitShotFrame);
+fitShotFrame();
+
 const EVENTS=[
   ["Combat Start","Pause","The round goes live. Music pauses so you can hear footsteps and callouts."],
   ["Player Eliminated","Play","You died. Music comes back while you wait for the round to end."],
