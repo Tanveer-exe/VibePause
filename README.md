@@ -12,7 +12,7 @@
 
 <p align="center">
   <b>No overlay. No game injection. No memory reading. No gameplay automation.</b><br>
-  VibePause never touches VALORANT &mdash; it only reads a local log file and controls Windows media playback.
+  VibePause never touches VALORANT &mdash; it reads a local log file, uses Windows' built-in OCR on your screen to spot eliminations (processed in memory, never saved or sent anywhere), and controls Windows media playback.
 </p>
 
 <p align="center">
