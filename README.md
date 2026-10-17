@@ -7,7 +7,12 @@
 <p align="center"><b>Your game. Your music. Automatically synced.</b></p>
 
 <p align="center">
-  A lightweight Windows companion for <b>VALORANT</b> that automatically controls your music based on what is happening in the match.
+  Get fragged mid-song one too many times? VibePause pauses your music the instant a VALORANT round starts and brings it back when you die, buy, or head back to the lobby &mdash; no more diving for the volume mixer.
+</p>
+
+<p align="center">
+  <b>No overlay. No game injection. No memory reading. No gameplay automation.</b><br>
+  VibePause never touches VALORANT &mdash; it only reads a local log file and controls Windows media playback.
 </p>
 
 <p align="center">
@@ -19,11 +24,6 @@
   <img alt="Made with Claude" src="https://img.shields.io/badge/MADE_WITH-CLAUDE-8b5cf6?labelColor=555555&style=flat-square">
   <a href="https://ko-fi.com/tanveerexe"><img alt="Support on Ko-fi" src="https://img.shields.io/badge/KO--FI-SUPPORT-ff5e5b?labelColor=555555&style=flat-square"></a>
   <a href="https://tanveer-exe.github.io/VibePause/"><img alt="Website" src="https://img.shields.io/badge/WEBSITE-VISIT-ff5d8f?labelColor=555555&style=flat-square"></a>
-</p>
-
-<p align="center">
-  <b>No overlay. No game injection. No memory reading. No gameplay automation.</b><br>
-  VibePause runs locally and controls Windows media playback.
 </p>
 
 <p align="center">

@@ -82,6 +82,11 @@ nav{display:flex;align-items:center;justify-content:space-between;padding:22px 0
 .hero .lede{margin-top:22px}
 .actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:34px}
 .fine{margin-top:18px;font-size:.92rem;color:var(--muted);max-width:30rem}
+.trust{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;margin-top:26px;font-size:.92rem;color:var(--muted)}
+.trust span{display:inline-flex;align-items:center;gap:7px}
+.trust span::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--teal);box-shadow:0 0 8px rgba(47,227,198,.8)}
+.trust a{color:var(--teal);text-decoration:none;font-weight:600}
+.trust a:hover{text-decoration:underline}
 .shot{display:block;width:100%;height:auto;border-radius:16px;box-shadow:0 40px 90px -30px rgba(0,0,0,.8),0 0 120px -20px rgba(104,66,232,.5)}
 
 section{padding:70px 0}
@@ -181,6 +186,7 @@ footer a{text-underline-offset:3px}
     <div class="navlinks">
       <a href="#try">Try it</a>
       <a href="#how">How it works</a>
+      <a href="#safe">Safety</a>
       <a href="https://github.com/Tanveer-exe/VibePause">GitHub</a>
     </div>
   </nav>
@@ -189,12 +195,16 @@ footer a{text-underline-offset:3px}
   <header class="hero" id="top">
     <div>
       <h1>Your music follows the round.</h1>
-      <p class="lede">VibePause pauses your music when a VALORANT round starts, then plays it again when you die, buy, or head back to the lobby. It runs quietly in your tray.</p>
+      <p class="lede">Tired of getting fragged mid-song? VibePause pauses your music the second a VALORANT round starts, then brings it back when you die, buy, or head back to the lobby. It runs quietly in your tray.</p>
       <div class="actions">
         <a class="btn primary" id="download" href="https://github.com/Tanveer-exe/VibePause/releases/latest/download/VibePause_Setup.exe">Download for Windows</a>
         <a class="btn" href="https://github.com/Tanveer-exe/VibePause">View source</a>
       </div>
       <p class="fine">Free, no account, no admin rights. Available in 15 languages (machine-translated, so some wording may be off). The installer is not code-signed yet, so Windows may show a SmartScreen warning. Choose More info, then Run anyway.</p>
+      <p class="trust">
+        <span>No overlay</span><span>No game injection</span><span>No memory reading</span>
+        <a href="#safe">Why it's safe to run &rarr;</a>
+      </p>
     </div>
     <div>
       <img class="shot" src="screenshot.png" width="1020" height="639" alt="The VibePause window: player card, Music behaviour grid with the Pause and Volume switch, supported media and game status">
@@ -258,11 +268,11 @@ footer a{text-underline-offset:3px}
     <p class="fine">Want to check the file first? In PowerShell, run <code>Get-FileHash .\VibePause_Setup.exe</code> and compare it with the <code>VibePause_Setup.exe.sha256</code> file on the release page.</p>
   </section>
 
-  <section>
+  <section id="safe">
     <div class="split">
       <div>
         <h2>It stays out of your game.</h2>
-        <p class="lede" style="margin-top:14px">VibePause is a separate app that talks to Windows, not to VALORANT.</p>
+        <p class="lede" style="margin-top:14px">VibePause is a separate app that talks to Windows, not to VALORANT. Nothing here touches the game itself.</p>
         <ul class="never">
           <li>No injecting into VALORANT</li>
           <li>No reading game memory</li>
