@@ -166,7 +166,9 @@ VibePause runs locally and does not require:
 
 The application only uses network access for checking and downloading updates from GitHub.
 
-Your settings and a local `error.log` (technical error details, never uploaded) are stored in `Documents\VibePause`. See the full [Privacy Policy](src/PRIVACY_POLICY.md) and [Terms and Conditions](src/TERMS_AND_CONDITIONS.md).
+Your settings and a local `error.log` (technical error details, never uploaded) are stored in `Documents\VibePause`. The now-playing card shows the title, artist and artwork that your media app shares with Windows; they stay in memory and are never saved or sent anywhere. The [website](https://tanveer-exe.github.io/VibePause/) sets no cookies and has no analytics or ads.
+
+See the full [Privacy Policy](src/PRIVACY_POLICY.md), [Terms and Conditions](src/TERMS_AND_CONDITIONS.md), [Cookie Policy](COOKIE_POLICY.md) and [third-party notices](src/THIRD_PARTY_NOTICES.md). The same documents are on the website: [Privacy](https://tanveer-exe.github.io/VibePause/privacy.html), [Terms](https://tanveer-exe.github.io/VibePause/terms.html), [Cookies](https://tanveer-exe.github.io/VibePause/cookies.html).
 
 ---
 
@@ -182,6 +184,8 @@ VibePause is:
 
 - **Not affiliated with, endorsed by, or sponsored by Riot Games or VALORANT**
 - **Not associated with any third-party media applications**
+
+VibePause isn't endorsed by Riot Games and doesn't reflect the views or opinions of Riot Games or anyone officially involved in producing or managing Riot Games properties. Riot Games can change its rules at any time, so you use VibePause at your own risk.
 
 VALORANT and its related systems may change at any time. Compatibility is not guaranteed across all future versions of VALORANT or Windows.
 
@@ -227,9 +231,19 @@ If you find a problem, please [open an issue](https://github.com/Tanveer-exe/Vib
 
 ## Trademarks
 
-VALORANT and Riot Games are trademarks of Riot Games, Inc. Other product names, applications, logos, and trademarks mentioned in this project belong to their respective owners.
+VALORANT and Riot Games are trademarks or registered trademarks of Riot Games, Inc. Other product names, applications, logos, and trademarks mentioned in this project (including the names Chrome, YouTube Music, Apple Music and Spotify, which are used only to show which apps VibePause can work with) belong to their respective owners.
 
 VibePause does not claim ownership of any third-party names, logos, or applications.
+
+---
+
+## Accessibility
+
+The website is built to work with a keyboard and screen readers. The Windows app uses a custom-drawn window that is mostly mouse-operated and is not yet fully usable with a keyboard or screen reader. If something blocks you, please [open an issue](https://github.com/Tanveer-exe/VibePause/issues/new/choose).
+
+## Donations
+
+VibePause is free and no feature depends on a donation. Donations on Ko-fi are voluntary gifts; see the [Terms and Conditions](src/TERMS_AND_CONDITIONS.md) for how they and refunds are handled.
 
 ---
 

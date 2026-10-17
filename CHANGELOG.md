@@ -1,5 +1,5 @@
 # Changelog
-## 1.0.2
+## 0.1.3
 
 - Add a now-playing card to the main window. It shows the title, artist and artwork of what is playing, with previous, play/pause and next buttons that follow what the player supports. It replaces the large status circle, the waveform and the old Play/Pause buttons.
 - The artwork is a slowly spinning disc. It spins only while music plays, stops while the window is hidden or minimized, and can be switched off with the new "Spinning cover" setting.
@@ -9,6 +9,8 @@
 - Show a clearer message, and write the details to error.log, when an update download returns a web page instead of the installer or a different size than expected.
 - error.log now also records crashes outside the window (including background threads) and every failed update check or download, with the Windows and Python version on each entry.
 - Remove the Google Drive update fallback. Updates come from GitHub releases only.
+- Update the Privacy Policy and Terms and Conditions. The Privacy Policy now says the App shows the title, artist and artwork of what is playing (kept in memory only), covers the website, and lists how to reach us. The Terms now cover the website, donations and refunds, and Riot Games' required disclaimer. You are asked to accept them again the first time you start this version.
+- Add a Cookie Policy, website pages for the Privacy Policy, Terms and Cookie Policy, and correct the third-party notices.
 
 ## 1.0.1
 
