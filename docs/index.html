@@ -82,11 +82,7 @@ nav{display:flex;align-items:center;justify-content:space-between;padding:22px 0
 .hero .lede{margin-top:22px}
 .actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:34px}
 .fine{margin-top:18px;font-size:.92rem;color:var(--muted);max-width:30rem}
-.shot{padding:10px;border-radius:30px;box-shadow:0 40px 90px -30px rgba(0,0,0,.8),0 0 120px -20px rgba(104,66,232,.5)}
-.shot img{display:block;width:100%;height:auto;border-radius:22px}
-.shot-frame{position:relative;width:100%;aspect-ratio:1040/650;border-radius:22px;overflow:hidden;background:#0a0a1c}
-.shot-frame iframe{position:absolute;top:0;left:0;width:1040px;height:650px;border:0;transform-origin:top left}
-.shot-caption{margin-top:12px;font-size:.86rem;color:var(--muted);text-align:center}
+.shot{display:block;width:100%;height:auto;border-radius:16px;box-shadow:0 40px 90px -30px rgba(0,0,0,.8),0 0 120px -20px rgba(104,66,232,.5)}
 
 section{padding:70px 0}
 .head{max-width:40rem;margin-bottom:40px}
@@ -104,6 +100,18 @@ section{padding:70px 0}
 .chip{font:600 .82rem var(--body);padding:4px 12px;border-radius:999px}
 .chip.Play{background:rgba(47,227,198,.16);color:var(--teal)}
 .chip.Pause{background:rgba(255,93,143,.18);color:var(--pink)}
+.chip.None{background:rgba(255,255,255,.09);color:var(--muted)}
+.chip.Vol{background:rgba(104,66,232,.28);color:#cfc4ff}
+.modes{display:inline-flex;padding:4px;border-radius:999px;background:var(--panel);border:1px solid var(--edge);margin:0 0 14px 4px;gap:2px}
+.modes button{all:unset;box-sizing:border-box;cursor:pointer;padding:8px 22px;border-radius:999px;font-weight:600;color:var(--muted)}
+.modes button[aria-pressed="true"]{background:var(--panel-strong);color:var(--text);box-shadow:inset 0 0 0 1px var(--edge)}
+.modes button:focus-visible{outline:2px solid var(--teal)}
+.meter{height:10px;border-radius:99px;background:rgba(255,255,255,.1);overflow:hidden;max-width:22rem}
+.meter i{display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--violet),var(--pink));transition:width .35s}
+.modeinfo{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:22px}
+.modeinfo .glass{padding:24px}
+.modeinfo p{color:var(--muted);margin-top:8px}
+.modeinfo .note{grid-column:1/-1;color:var(--muted);font-size:.95rem}
 .stage{padding:34px;display:flex;flex-direction:column;justify-content:center;gap:26px;min-height:360px}
 .stage .event{font:700 1.9rem/1.1 var(--display);letter-spacing:-.02em}
 .stage .what{color:var(--muted);max-width:30rem;min-height:3.3em}
@@ -117,6 +125,8 @@ section{padding:70px 0}
 .state{font:600 1.05rem var(--body)}
 .state.Play{color:var(--teal)}
 .state.Pause{color:#ffb3c8}
+.state.None{color:var(--muted)}
+.state.Vol{color:#cfc4ff}
 
 .flow{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;counter-reset:s}
 .step{padding:28px;position:relative}
@@ -146,7 +156,7 @@ footer p+p{margin-top:8px;max-width:44rem}
 footer a{text-underline-offset:3px}
 
 @media (max-width:900px){
-  .hero,.try{grid-template-columns:1fr}
+  .hero,.try,.modeinfo{grid-template-columns:1fr}
   .flow{grid-template-columns:1fr}
   .hero{padding-top:30px}
 }
@@ -184,19 +194,18 @@ footer a{text-underline-offset:3px}
       <p class="fine">Free, no account, no admin rights. Available in 15 languages. The installer is not code-signed yet, so Windows may show a SmartScreen warning. Choose More info, then Run anyway.</p>
     </div>
     <div>
-      <div class="shot glass">
-        <div class="shot-frame">
-          <iframe src="app-preview.html" title="A live preview of the VibePause window: now playing card with a spinning disc, the Music behaviour grid, and the Pause/Volume switch" loading="lazy"></iframe>
-        </div>
-      </div>
-      <p class="shot-caption">Live preview &mdash; click the Pause/Volume switch to see both modes.</p>
+      <img class="shot" src="screenshot.png" width="1298" height="797" alt="The VibePause window: now playing card, Music behaviour grid with the Pause and Volume switch, supported media and game status">
     </div>
   </header>
 
   <section id="try">
     <div class="head">
       <h2>Pick an event, see what happens.</h2>
-      <p>These are the default actions. In the app you can set every event to Play, Pause, or None, or switch to Volume mode and give each event its own volume.</p>
+      <p>This is an example setup. In the app you can set every event to Play, Pause, or None, or switch to Volume mode and give each event its own volume.</p>
+    </div>
+    <div class="modes" role="group" aria-label="Music behaviour mode">
+      <button type="button" id="modePause" aria-pressed="true">Pause</button>
+      <button type="button" id="modeVolume" aria-pressed="false">Volume</button>
     </div>
     <div class="try">
       <div class="events glass" id="events" role="group" aria-label="VALORANT events"></div>
@@ -204,8 +213,20 @@ footer a{text-underline-offset:3px}
         <div class="event" id="evName">Combat Start</div>
         <p class="what" id="evWhat"></p>
         <div class="bars" id="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="meter" id="meter" hidden><i id="meterFill"></i></div>
         <div class="state" id="evState"></div>
       </div>
+    </div>
+    <div class="modeinfo">
+      <div class="glass">
+        <h3>Pause mode</h3>
+        <p>The default. Each event plays your music, pauses it, or does nothing. Use it when you want the music to stop completely during a round.</p>
+      </div>
+      <div class="glass">
+        <h3>Volume mode</h3>
+        <p>Each event sets a volume from 0% (silent) to 100% with a slider instead. Click the percentage to leave an event unchanged. The music keeps playing and only gets quieter or louder, so you can keep it low in the background during a round.</p>
+      </div>
+      <p class="note">Volume mode changes the same per-app volume you see in the Windows volume mixer. It never touches VALORANT, Riot software, voice chat or call apps, and it puts volumes back when you switch to Pause mode or close VibePause.</p>
     </div>
   </section>
 
@@ -277,45 +298,66 @@ footer a{text-underline-offset:3px}
 </div>
 
 <script>
-function fitShotFrame(){
-  document.querySelectorAll(".shot-frame").forEach(wrap=>{
-    const ifr=wrap.querySelector("iframe");
-    if(!ifr)return;
-    ifr.style.transform="scale("+(wrap.clientWidth/1040)+")";
-  });
-}
-window.addEventListener("resize",fitShotFrame);
-fitShotFrame();
-
+// Example setup: pause-mode action, volume-mode level (null = left unchanged), description.
 const EVENTS=[
-  ["Combat Start","Pause","The round goes live. Music pauses so you can hear footsteps and callouts."],
-  ["Player Eliminated","Play","You died. Music comes back while you wait for the round to end."],
-  ["Match Started","Play","The match is loading in. Music plays."],
-  ["Buy Phase Started","Play","The buy phase opens. Music plays while you pick your loadout."],
-  ["Match Ended","Play","The match is over. Music plays."],
-  ["Returned to Lobby","Play","You are back at the main menu. Music plays."],
-  ["Agent Selection","Play","Agent select opens. Music plays while you lock in."],
-  ["Ultimate Used","Play","You were revived by an ultimate. Music plays."]
+  ["Combat Start","Pause",20,"A round becomes active."],
+  ["Player Eliminated","Play",100,"The local player dies during a round."],
+  ["Match Started","None",null,"The match becomes active."],
+  ["Buy Phase Started","Play",100,"The buy phase opens."],
+  ["Match Ended","Play",100,"The match ends."],
+  ["Returned to Lobby","None",null,"You return to the main menu."],
+  ["Agent Selection","None",null,"Agent selection opens."],
+  ["Ultimate Used","Pause",20,"You are revived by an ultimate."]
 ];
 const list=document.getElementById("events"),bars=document.getElementById("bars");
-EVENTS.forEach(([name,action],i)=>{
+const meter=document.getElementById("meter"),fill=document.getElementById("meterFill");
+let cur=0,mode="Pause";
+EVENTS.forEach((e,i)=>{
   const b=document.createElement("button");
-  b.type="button";b.setAttribute("aria-pressed",i===0);
-  b.innerHTML=name+'<span class="chip '+action+'">'+action+'</span>';
-  b.addEventListener("click",()=>pick(i));
+  b.type="button";
+  b.addEventListener("click",()=>{cur=i;render()});
   list.appendChild(b);
 });
-function pick(i){
-  const [name,action,what]=EVENTS[i];
-  [...list.children].forEach((c,j)=>c.setAttribute("aria-pressed",j===i));
-  document.getElementById("evName").textContent=name;
-  document.getElementById("evWhat").textContent=what;
-  const s=document.getElementById("evState");
-  s.className="state "+action;
-  s.textContent=action==="Play"?"Music is playing":"Music is paused";
-  bars.classList.toggle("on",action==="Play");
+function chipFor(e){
+  if(mode==="Pause")return[e[1],e[1]];
+  return e[2]===null?["None","Unchanged"]:["Vol",e[2]+"%"];
 }
-pick(0);
+function render(){
+  const e=EVENTS[cur];
+  [...list.children].forEach((c,j)=>{
+    const [cls,label]=chipFor(EVENTS[j]);
+    c.setAttribute("aria-pressed",j===cur);
+    c.innerHTML=EVENTS[j][0]+'<span class="chip '+cls+'">'+label+'</span>';
+  });
+  document.getElementById("modePause").setAttribute("aria-pressed",mode==="Pause");
+  document.getElementById("modeVolume").setAttribute("aria-pressed",mode==="Volume");
+  document.getElementById("evName").textContent=e[0];
+  const s=document.getElementById("evState"),w=document.getElementById("evWhat");
+  let playing,height="";
+  if(mode==="Pause"){
+    const a=e[1];
+    w.textContent=e[3]+(a==="Pause"?" Music pauses so you can hear footsteps and callouts.":a==="Play"?" Music plays.":" VibePause leaves your music alone.");
+    s.className="state "+a;
+    s.textContent=a==="Play"?"Music is playing":a==="Pause"?"Music is paused":"Music is left as it is";
+    playing=a==="Play";meter.hidden=true;
+  }else{
+    const v=e[2];
+    meter.hidden=false;
+    if(v===null){
+      w.textContent=e[3]+" The volume is left unchanged.";
+      s.className="state None";s.textContent="Volume unchanged";
+      fill.style.width="0";meter.hidden=true;playing=true;
+    }else{
+      w.textContent=e[3]+(v<=30?" Music keeps playing, but drops to a low background level.":" Music keeps playing at full volume.");
+      s.className="state Vol";s.textContent="Music volume set to "+v+"%";
+      fill.style.width=v+"%";playing=true;
+    }
+  }
+  bars.classList.toggle("on",playing);
+}
+document.getElementById("modePause").addEventListener("click",()=>{mode="Pause";render()});
+document.getElementById("modeVolume").addEventListener("click",()=>{mode="Volume";render()});
+render();
 
 const COLORS={"Python":"#3572A5","Inno Setup":"#264b99","PowerShell":"#012456","Shell":"#89e051","Batchfile":"#C1F12E","HTML":"#e34c26","CSS":"#663399","JavaScript":"#f1e05a"};
 function drawLangs(data){
