@@ -1577,8 +1577,8 @@ def mix_color(a, b, f):
 # is rotated; the circular mask and the vinyl overlay are the same at every angle, so they are
 # applied/drawn without rotating (no fringe at the edge, and the overlay is one static image).
 # ---------------------------------------------------------------------------
-DISC_STEP = 4                   # degrees between pre-rendered frames
-DISC_FRAMES = 360 // DISC_STEP  # 90
+DISC_STEP = 2                   # degrees between pre-rendered frames
+DISC_FRAMES = 360 // DISC_STEP  # 180
 SPIN_PERIOD = 8.0               # seconds per revolution
 
 
