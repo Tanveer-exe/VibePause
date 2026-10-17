@@ -2,6 +2,10 @@ name: Feature request
 description: Suggest an idea for VibePause
 labels: ["enhancement"]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        **Issues on GitHub are public.** Please do not include personal information (such as your email, real name or account details).
   - type: textarea
     id: idea
     attributes:
@@ -17,3 +21,10 @@ body:
     id: alternatives
     attributes:
       label: Anything you have tried instead?
+  - type: checkboxes
+    id: public
+    attributes:
+      label: Public post
+      options:
+        - label: I understand this issue is public and I have not included personal information.
+          required: true

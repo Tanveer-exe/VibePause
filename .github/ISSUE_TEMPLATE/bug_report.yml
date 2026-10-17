@@ -6,6 +6,10 @@ body:
     attributes:
       value: |
         Thanks for helping improve VibePause. In VibePause, **Settings > Copy diagnostics** copies most of what is asked below. Please paste it in the last box.
+  - type: markdown
+    attributes:
+      value: |
+        **Issues on GitHub are public.** Please do not include personal information (such as your email, real name or account details). If you paste Settings > Copy diagnostics, read it first: it contains your settings, Windows version, recent activity and the end of the error log.
   - type: input
     id: version
     attributes:
@@ -54,3 +58,10 @@ body:
       label: Diagnostics
       description: Paste the result of Settings > Copy diagnostics. It does not include your Windows user name.
       render: text
+  - type: checkboxes
+    id: public
+    attributes:
+      label: Public post
+      options:
+        - label: I understand this issue is public and I have not included personal information.
+          required: true
