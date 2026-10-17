@@ -193,7 +193,7 @@ VibePause isn't endorsed by Riot Games and doesn't reflect the views or opinions
 
 VALORANT and its related systems may change at any time. Compatibility is not guaranteed across all future versions of VALORANT or Windows.
 
-If you experience a problem, please open an issue on GitHub with details about what happened.
+If you experience a problem, please open an issue on GitHub with details about what happened, or email [tanveerexee@gmail.com](mailto:tanveerexee@gmail.com).
 
 ---
 
@@ -229,7 +229,7 @@ The code lives in the [`src`](src) folder.
 3. Run `python VibePause.pyw` to start the app, or `pyinstaller --clean --noconfirm VibePause.spec` to build it.
 4. To build the installer, compile `src/installer/VibePause.iss` with Inno Setup 6 after copying `LICENSE` into `src`.
 
-If you find a problem, please [open an issue](https://github.com/Tanveer-exe/VibePause/issues/new/choose). In VibePause, **Settings > Copy diagnostics** copies the details the form asks for.
+If you find a problem, please [open an issue](https://github.com/Tanveer-exe/VibePause/issues/new/choose) or email [tanveerexee@gmail.com](mailto:tanveerexee@gmail.com). In VibePause, **Settings > Copy diagnostics** copies the details the form asks for.
 
 ---
 
