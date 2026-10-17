@@ -90,7 +90,7 @@ The main window shows what's currently playing, with its artwork, title and arti
 A switch at the top of the **Music behaviour** card changes how events control your music:
 
 - **Pause** (default): each event plays, pauses, or does nothing, as above.
-- **Volume**: each event sets a volume from 0% (silent) to 100% with a slider. Click the percentage to leave an event unchanged. The music keeps playing and only its volume changes.
+- **Volume**: each event sets a volume from 0% (silent) to 100% with a slider. Click the percentage to leave an event unchanged. The music keeps playing and only its volume changes. By default, events that pause in Pause mode drop to 20%, and the rest go to 100%.
 
 Volume mode changes the same per-app volume you see in the Windows volume mixer. It never changes VALORANT, Riot software, voice chat or call apps, and it puts volumes back when you switch to Pause mode or exit VibePause.
 
