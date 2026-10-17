@@ -459,16 +459,6 @@ UPDATE_API = f"https://api.github.com/repos/{UPDATE_REPO}/releases?per_page=20"
 class UpdateError(Exception):
     """A real problem (network, GitHub, missing installer) with a message safe to show the user."""
 
-class RepoPrivateError(UpdateError):
-    """GitHub answered 404 to the anonymous release request: the repo is private (or gone).
-    check_for_update() reacts to this by using the Google Drive fallback instead."""
-
-# Google Drive fallback, used only while the GitHub repo is private. Both files are shared as
-# "Anyone with the link". Re-upload them with Drive's "Manage versions" so these IDs never change.
-DRIVE_MANIFEST_ID = "1zRpcOnWckaOE3PID73R-q7P7GgNCWC1T"    # latest.json (made by make_latest.py)
-DRIVE_INSTALLER_ID = "1Ok9FeCHM-zyra-fuBhrJcBFkHRqiZpCh"   # VibePause_Setup.exe
-DRIVE_DOWNLOAD = "https://drive.google.com/uc?export=download&confirm=t&id={}"
-
 def version_tuple(value):
     """'v0.1.1' -> (0, 1, 1). Ignores a leading v and any suffix such as '-alpha'."""
     m = re.match(r"^\s*[vV]?(\d+(?:\.\d+)*)", str(value or ""))
@@ -558,8 +548,6 @@ def fetch_releases(timeout=UPDATE_CHECK_TIMEOUT):
             data = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         write_error_log(f"Update check: HTTP {e.code}")
-        if e.code == 404:
-            raise RepoPrivateError("GitHub repository is not public.")
         raise UpdateError("Can't check for updates right now. Try again later.")
     except (urllib.error.URLError, TimeoutError, OSError) as e:
         write_error_log(f"Update check: {type(e).__name__}: {e}")
@@ -570,43 +558,9 @@ def fetch_releases(timeout=UPDATE_CHECK_TIMEOUT):
         raise UpdateError("Can't check for updates right now. Try again later.")
     return data
 
-def fetch_drive_update(current_version, timeout=UPDATE_CHECK_TIMEOUT):
-    """Google Drive fallback. Reads latest.json and returns the same tuple pick_update() does."""
-    req = urllib.request.Request(DRIVE_DOWNLOAD.format(DRIVE_MANIFEST_ID),
-                                 headers={"User-Agent": f"VibePause/{APP_VERSION}"})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read(65536).decode("utf-8-sig"))
-        if not isinstance(data, dict):
-            raise ValueError("manifest is not an object")
-        latest = str(data.get("version", "")).strip().lstrip("vV")
-        latest_v = version_tuple(latest)
-        if latest_v is None:
-            raise ValueError("manifest has no valid version")
-        size = int(data.get("size") or 0)
-    except urllib.error.HTTPError as e:
-        write_error_log(f"Drive update check: HTTP {e.code}")
-        raise UpdateError("Can't check for updates right now. Try again later.")
-    except (urllib.error.URLError, TimeoutError, OSError) as e:
-        write_error_log(f"Drive update check: {type(e).__name__}: {e}")
-        raise UpdateError("Can't check for updates. Check your internet connection.")
-    except (ValueError, TypeError) as e:
-        write_error_log(f"Drive update check: bad manifest: {e}")
-        raise UpdateError("Can't check for updates right now. Try again later.")
-    if latest_v <= (version_tuple(current_version) or (0,)):
-        return ("current", latest)
-    sha = str(data.get("sha256", "")).strip().lower()
-    if not re.fullmatch(r"[0-9a-f]{64}", sha):     # Drive has no digest of its own, so insist on ours
-        raise UpdateError(f"VibePause {latest} was published, but its update information is incomplete.")
-    notes = clean_release_notes(data.get("notes"))
-    return ("update", latest, DRIVE_DOWNLOAD.format(DRIVE_INSTALLER_ID), size, "sha256:" + sha, notes)
-
 def check_for_update(current_version):
-    """GitHub first. If the repo is private (404 for anonymous requests), use Google Drive instead."""
-    try:
-        return pick_update(fetch_releases(), current_version)
-    except RepoPrivateError:
-        return fetch_drive_update(current_version)
+    """Checks GitHub releases for a newer version."""
+    return pick_update(fetch_releases(), current_version)
 
 def verify_installer(path, digest):
     with open(path, "rb") as fh:
@@ -1644,6 +1598,17 @@ def square_cover(img, d):
     return img.crop((left, top, left + side, top + side)).resize((d, d), Image.Resampling.LANCZOS)
 
 
+COVER_SS = 2    # cover is rotated at 2x and scaled down, so spinning frames stay as sharp as the still one
+
+
+def cover_frames_source(img, d):
+    """Square cover at COVER_SS * d, sharpened a little when the artwork had to be enlarged."""
+    sq = square_cover(img, d * COVER_SS)
+    if min(img.size) < d * COVER_SS:
+        sq = sq.filter(ImageFilter.UnsharpMask(radius=1.2, percent=60, threshold=2))
+    return sq
+
+
 def placeholder_cover(d):
     """Artwork stand-in: a muted conic gradient in the ring colours, so the spin is visible."""
     big = max(d, 64)
@@ -1659,8 +1624,11 @@ def placeholder_cover(d):
 
 
 def disc_frame(sq, mask, angle):
-    """One frame: the square cover turned clockwise by angle, cut to a circle."""
+    """One frame: the square cover turned clockwise by angle, cut to a circle.
+    sq may be larger than mask (supersampled); it is scaled down after rotating."""
     frame = sq if angle % 360 == 0 else sq.rotate(-angle, resample=Image.Resampling.BICUBIC)
+    if frame.size != mask.size:
+        frame = frame.resize(mask.size, Image.Resampling.LANCZOS)
     frame = frame.convert("RGBA")
     frame.putalpha(mask)
     return frame
@@ -3024,7 +2992,7 @@ class App:
     def cover_worker(self, gen, thumb, spin, d):
         """Background thread: PIL work only. PhotoImages are made on the UI thread."""
         try:
-            sq = square_cover(thumb, d) if thumb is not None else placeholder_cover(d)
+            sq = cover_frames_source(thumb, d) if thumb is not None else placeholder_cover(d)
             mask = disc_mask(d)
             self.event("disc_static", (gen, disc_frame(sq, mask, 0)))
             if not spin:
@@ -3574,7 +3542,7 @@ class App:
             if expected_size and done != expected_size:
                 write_error_log(f"Update download: received {done} bytes, expected {expected_size} "
                                 f"(Content-Type: {ctype or 'unknown'})")
-                if "text/html" in ctype:      # e.g. Google Drive's quota or confirmation page, not the file
+                if "text/html" in ctype:      # a web page (error or quota page), not the file
                     raise UpdateError("The download server sent a web page instead of the installer. Please try again later.")
                 raise UpdateError("The downloaded installer is incomplete. Please try again.")
             verify_installer(path, digest)
