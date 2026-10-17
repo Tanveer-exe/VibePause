@@ -10,8 +10,8 @@ VibePause uses the following third-party libraries and components:
 
 ## Pillow (PIL Fork)
 - Used for image processing and GUI icons
-- License: PILLOW SOFTWARE LICENSE
-- Copyright (c) 1997-2022 Eric S. Peters, Fredrik Lundh, and contributors
+- License: MIT-CMU (also known as the HPND license)
+- Copyright (c) 1997-2011 Secret Labs AB; (c) 1995-2011 Fredrik Lundh and contributors; (c) 2010 Jeffrey A. Clark and contributors
 - Source: https://pypi.org/project/Pillow/
 
 ## winrt-runtime
@@ -62,9 +62,23 @@ VibePause uses the following third-party libraries and components:
 - Licensed under GitHub's Terms of Service
 - Source: https://docs.github.com/en/actions
 
-### Notes
-This list includes libraries directly used in VibePause as of version 0.1.3.
-Transitive dependencies are not listed individually but are subject to their own licenses.
+## winrt-Windows.Graphics.Imaging
+- Used to hand a screen capture to the Windows OCR engine
+- License: MIT License
+- Copyright (c) Microsoft Corporation
+- Source: https://pypi.org/project/winrt-Windows.Graphics.Imaging/
+
+## winrt-Windows.Media.Ocr
+- Used for Windows built-in OCR death detection
+- License: MIT License
+- Copyright (c) Microsoft Corporation
+- Source: https://pypi.org/project/winrt-Windows.Media.Ocr/
+
+## winrt-Windows.Storage.Streams
+- Used for in-memory streams (artwork and OCR images)
+- License: MIT License
+- Copyright (c) Microsoft Corporation
+- Source: https://pypi.org/project/winrt-Windows.Storage.Streams/
 
 ## pycaw
 - Used for per-app volume control in volume mode (Windows Core Audio)
@@ -83,3 +97,9 @@ Transitive dependencies are not listed individually but are subject to their own
 - License: BSD 3-Clause License
 - Copyright (c) 2009, Jay Loden, Dave Daeschler, Giampaolo Rodola
 - Source: https://pypi.org/project/psutil/
+
+### Notes
+This list includes libraries directly used in VibePause as of version 0.1.3.
+Transitive dependencies are not listed individually but are subject to their own licenses.
+The Windows OCR engine and Windows media controls are part of Windows, not of VibePause.
+Names of media apps (Chrome, YouTube Music, Apple Music, Spotify) are trademarks of their respective owners and are used only, as plain text, to show which apps VibePause can work with.

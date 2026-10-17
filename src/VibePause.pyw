@@ -16,7 +16,7 @@ except Exception:
 
 APP_NAME = "VibePause"
 APP_ID = "tanveer-exe.VibePause"
-APP_VERSION = "1.0.2"
+APP_VERSION = "0.1.3"
 UPDATE_REPO = "Tanveer-exe/VibePause"
 UPDATE_ASSET = "VibePause_Setup.exe"
 # Bundled resources: PyInstaller extracts/places them under sys._MEIPASS.
@@ -2192,7 +2192,6 @@ class App:
         # Every UI icon is a PNG, explicitly resized. Source files are 64px and never shown at native size.
         sizes = {
             "play": 17, "pause": 17, "none": 14, "gear": 16, "close": 16, "reset": 16,
-            "chrome": 20, "youtube_music": 20, "apple_music": 20, "spotify": 20,
             "vibepause_logo_24": 24, "vibepause_logo_32": 32,
         }
         for name, size in sizes.items():
@@ -2818,10 +2817,7 @@ class App:
         for i, name in enumerate(MEDIA_APPS):
             x, y = self.chip_origin(i)
             key, label = keys[name]
-            icon = self.img(key)
-            if icon:
-                cv.create_image(x + 10, y + 18, image=icon, anchor="w")
-            cv.create_text(x + 36, y + 18, text=label, fill=self.TEXT, font=self.F(9), anchor="w")
+            cv.create_text(x + 14, y + 18, text=label, fill=self.TEXT, font=self.F(9), anchor="w")
 
     def build_activity_card(self):
         """Game status: the current VALORANT state in large text and the last few game events."""
