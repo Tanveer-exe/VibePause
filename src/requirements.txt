@@ -1,5 +1,5 @@
 pystray==0.19.5
-Pillow==12.3.0
+Pillow==13.0.0
 winrt-runtime==3.2.1
 winrt-Windows.Foundation==3.2.1
 winrt-Windows.Foundation.Collections==3.2.1
