@@ -1,20 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 280" width="720" height="280" role="img" aria-labelledby="t d" font-family="Segoe UI, Helvetica, Arial, sans-serif">
 <title id="t">VibePause installer downloads over time</title>
-<desc id="d">Line chart of total installer downloads. Latest total: 15.</desc>
+<desc id="d">Line chart of total installer downloads. Latest total: 16.</desc>
 <rect width="720" height="280" rx="14" fill="#0f1923"/>
 <text x="56" y="30" font-size="16" font-weight="600" fill="#ece8e1">Installer downloads</text>
-<text x="56" y="50" font-size="12" fill="#9aa7b2">Total so far: 15 &#183; updated 2026-10-24 (UTC)</text>
+<text x="56" y="50" font-size="12" fill="#9aa7b2">Total so far: 16 &#183; updated 2026-10-25 (UTC)</text>
 <line x1="56" y1="240.0" x2="696" y2="240.0" stroke="#ffffff" stroke-opacity="0.08"/>
 <text x="48" y="244.0" font-size="11" text-anchor="end" fill="#9aa7b2">0</text>
-<line x1="56" y1="181.3" x2="696" y2="181.3" stroke="#ffffff" stroke-opacity="0.08"/>
-<text x="48" y="185.3" font-size="11" text-anchor="end" fill="#9aa7b2">5</text>
-<line x1="56" y1="122.7" x2="696" y2="122.7" stroke="#ffffff" stroke-opacity="0.08"/>
-<text x="48" y="126.7" font-size="11" text-anchor="end" fill="#9aa7b2">10</text>
+<line x1="56" y1="196.0" x2="696" y2="196.0" stroke="#ffffff" stroke-opacity="0.08"/>
+<text x="48" y="200.0" font-size="11" text-anchor="end" fill="#9aa7b2">5</text>
+<line x1="56" y1="152.0" x2="696" y2="152.0" stroke="#ffffff" stroke-opacity="0.08"/>
+<text x="48" y="156.0" font-size="11" text-anchor="end" fill="#9aa7b2">10</text>
+<line x1="56" y1="108.0" x2="696" y2="108.0" stroke="#ffffff" stroke-opacity="0.08"/>
+<text x="48" y="112.0" font-size="11" text-anchor="end" fill="#9aa7b2">15</text>
 <line x1="56" y1="64.0" x2="696" y2="64.0" stroke="#ffffff" stroke-opacity="0.08"/>
-<text x="48" y="68.0" font-size="11" text-anchor="end" fill="#9aa7b2">15</text>
-<polygon points="56,240 56.0,64.0 162.7,64.0 269.3,64.0 376.0,64.0 482.7,64.0 589.3,64.0 696.0,64.0 696.0,240" fill="#3ddbc4" fill-opacity="0.12"/>
-<polyline points="56.0,64.0 162.7,64.0 269.3,64.0 376.0,64.0 482.7,64.0 589.3,64.0 696.0,64.0" fill="none" stroke="#3ddbc4" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-<circle cx="696.0" cy="64.0" r="4" fill="#3ddbc4"/>
+<text x="48" y="68.0" font-size="11" text-anchor="end" fill="#9aa7b2">20</text>
+<polygon points="56,240 56.0,108.0 147.4,108.0 238.9,108.0 330.3,108.0 421.7,108.0 513.1,108.0 604.6,108.0 696.0,99.2 696.0,240" fill="#3ddbc4" fill-opacity="0.12"/>
+<polyline points="56.0,108.0 147.4,108.0 238.9,108.0 330.3,108.0 421.7,108.0 513.1,108.0 604.6,108.0 696.0,99.2" fill="none" stroke="#3ddbc4" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="696.0" cy="99.2" r="4" fill="#3ddbc4"/>
 <text x="56.0" y="266" font-size="11" text-anchor="start" fill="#9aa7b2">2026-10-18</text>
-<text x="696.0" y="266" font-size="11" text-anchor="end" fill="#9aa7b2">2026-10-24</text>
+<text x="696.0" y="266" font-size="11" text-anchor="end" fill="#9aa7b2">2026-10-25</text>
 </svg>
