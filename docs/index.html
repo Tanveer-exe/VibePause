@@ -230,12 +230,14 @@ footer a{text-underline-offset:3px}
   </nav>
 
   <main id="main">
+  <div class="archive-warning" role="alert" style="background:#ff4655;color:#fff;text-align:center;font-weight:700;padding:18px 16px;font-size:1.1rem;">
+    ⚠️ ARCHIVED &mdash; Riot Games has restricted the use of third-party apps that read game logs. This project is no longer maintained and downloads have been removed. Use any existing copy at your own risk.
+  </div>
   <header class="hero" id="top">
     <div>
       <h1>Your music follows the round.</h1>
       <p class="lede">Tired of getting fragged mid-song? VibePause pauses your music the second a VALORANT round starts, then brings it back when you die, buy, or head back to the lobby. It runs quietly in your tray.</p>
       <div class="actions">
-        <a class="btn primary" id="download" href="https://github.com/Tanveer-exe/VibePause/releases/latest/download/VibePause_Setup.exe">Download for Windows</a>
         <a class="btn" href="https://github.com/Tanveer-exe/VibePause">View source</a>
       </div>
       <p class="fine">Free, no account, no admin rights. Available in 15 languages (machine-translated, so some wording may be off). The installer is not code-signed yet, so Windows may show a SmartScreen warning. Choose More info, then Run anyway.</p>
@@ -474,10 +476,6 @@ function drawLangs(data){
 drawLangs({"Python":99510,"Inno Setup":5074});
 fetch("https://api.github.com/repos/Tanveer-exe/VibePause/languages")
   .then(r=>r.ok?r.json():Promise.reject()).then(d=>{if(Object.keys(d).length)drawLangs(d)}).catch(()=>{});
-fetch("https://api.github.com/repos/Tanveer-exe/VibePause/releases/latest")
-  .then(r=>r.ok?r.json():Promise.reject()).then(d=>{
-    if(d.tag_name)document.getElementById("download").textContent="Download "+d.tag_name+" for Windows";
-  }).catch(()=>{});
 </script>
 </body>
 </html>

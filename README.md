@@ -1,4 +1,10 @@
-> ⚠️ **Archived & use at your own risk:** Riot Games has restricted the use of third-party apps that read game logs. This project is no longer maintained and is kept here for reference only. Use it at your own risk.
+<p align="center">
+
+# ⚠️ ARCHIVED — RIOT GAMES HAS RESTRICTED THIRD-PARTY LOG-READING APPS
+
+### This project is no longer maintained. Use at your own risk.
+
+</p>
 
 <p align="center">
   <img src="docs/banner.png" alt="VibePause - Your game. Your music. Automatically synced." width="100%">
